@@ -3,60 +3,132 @@ import PropTypes from 'prop-types';
 import { useNavigate } from 'react-router-dom';
 import axios from 'axios';
 import styled from 'styled-components';
+import {
+  PageContainer,
+  Title,
+  Button,
+  Input,
+  FormGroup,
+  Card,
+} from '../components/shared/StyledComponents';
 
-const Container = styled.div`
+const LoginCard = styled(Card)`
+  max-width: 400px;
+  width: 100%;
+  margin: 2rem auto;
   display: flex;
   flex-direction: column;
+  gap: ${({ theme }) => theme.spacing.md};
+`;
+
+const ButtonGroup = styled.div`
+  display: flex;
+  gap: ${({ theme }) => theme.spacing.md};
+  margin-top: ${({ theme }) => theme.spacing.md};
+`;
+
+const ErrorMessage = styled.div`
+  color: ${({ theme }) => theme.error};
+  background: ${({ theme }) => `${theme.error}11`};
+  padding: ${({ theme }) => theme.spacing.sm};
+  border-radius: ${({ theme }) => theme.borderRadius};
+  font-size: 0.9rem;
+  text-align: center;
+  animation: ${({ theme }) => theme.animation.pageTransition};
+`;
+
+const LoginContainer = styled(PageContainer)`
+  display: flex;
   align-items: center;
-  background: ${(props) => props.theme.background};
-  height: 100vh;
-  padding: 20px;
-`;
-
-const Input = styled.input`
-  margin: 10px;
-  padding: 8px;
-  border: 1px solid ${(props) => props.theme.primary};
-`;
-
-const Button = styled.button`
-  padding: 10px;
-  background: ${(props) => props.theme.primary};
-  color: ${(props) => props.theme.accent};
-  border: none;
-  cursor: pointer;
+  justify-content: center;
+  background: ${({ theme }) => `linear-gradient(135deg, ${theme.background.main} 0%, ${theme.background.accent} 100%)`};
 `;
 
 const LoginPage = ({ setUser }) => {
   const [username, setUsername] = useState('');
   const [password, setPassword] = useState('');
+  const [error, setError] = useState('');
+  const [isLoading, setIsLoading] = useState(false);
   const navigate = useNavigate();
 
-  const handleLogin = () => {
-    axios
-      .post('http://localhost:5000/api/users/login', { username, password })
-      .then((res) => {
-        localStorage.setItem('token', res.data.token);
-        axios
-          .get('http://localhost:5000/api/users/me', {
-            headers: { Authorization: `Bearer ${res.data.token}` },
-          })
-          .then((userRes) => {
-            setUser(userRes.data);
-            navigate('/home');
-          });
-      })
-      .catch((err) => console.error(err));
+  const handleLogin = async () => {
+    if (!username || !password) {
+      setError('Please enter both username and password');
+      return;
+    }
+
+    setError('');
+    setIsLoading(true);
+
+    try {
+      const res = await axios.post('http://localhost:5000/api/users/login', { username, password });
+      localStorage.setItem('token', res.data.token);
+      
+      const userRes = await axios.get('http://localhost:5000/api/users/me', {
+        headers: { Authorization: `Bearer ${res.data.token}` },
+      });
+      
+      setUser(userRes.data);
+      navigate('/home');
+    } catch (err) {
+      setError(err.response?.data?.message || 'Login failed. Please try again.');
+      setIsLoading(false);
+    }
+  };
+
+  const handleKeyPress = (e) => {
+    if (e.key === 'Enter') {
+      handleLogin();
+    }
   };
 
   return (
-    <Container>
-      <h1>Login</h1>
-      <Input placeholder="Username" value={username} onChange={(e) => setUsername(e.target.value)} />
-      <Input type="password" placeholder="Password" value={password} onChange={(e) => setPassword(e.target.value)} />
-      <Button onClick={handleLogin}>Login</Button>
-      <Button onClick={() => navigate('/register')}>Register</Button>
-    </Container>
+    <LoginContainer>
+      <LoginCard>
+        <Title>Welcome Back</Title>
+        
+        <FormGroup>
+          <Input
+            placeholder="Username"
+            value={username}
+            onChange={(e) => setUsername(e.target.value)}
+            onKeyPress={handleKeyPress}
+            disabled={isLoading}
+          />
+        </FormGroup>
+
+        <FormGroup>
+          <Input
+            type="password"
+            placeholder="Password"
+            value={password}
+            onChange={(e) => setPassword(e.target.value)}
+            onKeyPress={handleKeyPress}
+            disabled={isLoading}
+          />
+        </FormGroup>
+
+        {error && <ErrorMessage>{error}</ErrorMessage>}
+
+        <ButtonGroup>
+          <Button 
+            onClick={handleLogin} 
+            disabled={isLoading}
+            style={{ flex: 1 }}
+          >
+            {isLoading ? 'Logging in...' : 'Login'}
+          </Button>
+          <Button 
+            onClick={() => navigate('/register')} 
+            variant="secondary"
+            disabled={isLoading}
+            style={{ flex: 1 }}
+          >
+            Register
+          </Button>
+        </ButtonGroup>
+      </LoginCard>
+    </LoginContainer>
   );
 };
 
