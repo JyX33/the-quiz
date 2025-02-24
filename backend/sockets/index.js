@@ -1,7 +1,6 @@
-import db, { runTransaction } from '../models/db.js';
-import { logAction } from '../models/logger.js';
+import { logAction, logger } from '../logger.js';
 import { authenticateSocket } from '../middleware/auth.js';
-import { logger } from '../logger.js';
+import db, { runTransaction } from '../models/db.js';
 
 // In-memory session scores and question tracking
 const sessionScores = {};
@@ -67,6 +66,37 @@ const setupSockets = (io) => {
           if (!session) {
             logger.warn('Attempt to join non-existent session:', { sessionId, userId: socket.userId });
             return socket.emit('error', 'Session not found');
+          }
+
+          if (session.status === 'in_progress') {
+            // Get the current question
+            const currentQuestion = session.current_question;
+            
+            // Get the quiz data to know total questions
+            db.get(
+              'SELECT questions FROM quizzes WHERE id = ?',
+              [session.quiz_id],
+              (err, quiz) => {
+                if (err || !quiz) return;
+                
+                try {
+                  const questions = JSON.parse(quiz.questions);
+                  
+                  // Send the current quiz state to the reconnecting user
+                  socket.emit('quizStateRestored', {
+                    currentQuestion,
+                    totalQuestions: questions.length,
+                    question: questions[currentQuestion]
+                  });
+                } catch (error) {
+                  logger.error('Error parsing quiz questions:', {
+                    error: error.message,
+                    sessionId,
+                    userId: socket.userId
+                  });
+                }
+              }
+            );
           }
           
           db.run(

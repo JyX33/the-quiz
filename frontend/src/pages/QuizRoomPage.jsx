@@ -109,6 +109,8 @@ const QuizRoomPage = ({ user }) => {
   const [questionStarted, setQuestionStarted] = useState(false);
   const [totalQuestions] = useState(5); // This should come from your backend
   const [updatedScore, setUpdatedScore] = useState(null);
+  const [setCurrentQuestionData] = useState(null); // Store question data
+  const [setTotalQuestions] = useState(5); // This should come from your backend
 
   useEffect(() => {
     socket.on('playerJoined', (players) => {
@@ -139,13 +141,22 @@ const QuizRoomPage = ({ user }) => {
       // This could be enhanced with a modal or animation
     });
 
+    socket.on('quizStateRestored', ({ currentQuestion, totalQuestions, question }) => {
+      setCurrentQuestion(currentQuestion);
+      setTotalQuestions(totalQuestions);
+      setCurrentQuestionData(question);
+      // Set the state to indicate the question has started
+      setQuestionStarted(true);
+    });
+
     return () => {
       socket.off('playerJoined');
       socket.off('scoreUpdate');
       socket.off('nextQuestion');
       socket.off('quizEnded');
+      socket.off('quizStateRestored');
     };
-  }, [scores]);
+  }, [scores, setCurrentQuestionData, setTotalQuestions]);
 
   useEffect(() => {
     if (timeLeft !== null && timeLeft > 0) {

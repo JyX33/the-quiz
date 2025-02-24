@@ -1,17 +1,18 @@
-import { useState, useEffect } from 'react';
-import { ThemeProvider } from 'styled-components';
-import { Routes, Route } from 'react-router-dom';
 import axios from 'axios';
-import { allianceTheme, hordeTheme } from './styles/themes';
-import LoginPage from './pages/LoginPage';
-import RegisterPage from './pages/RegisterPage';
-import HomePage from './pages/HomePage';
-import CreateQuizPage from './pages/CreateQuizPage';
-import LobbyPage from './pages/LobbyPage';
-import QuizRoomPage from './pages/QuizRoomPage';
-import LeaderboardPage from './pages/LeaderboardPage';
+import { useEffect, useState } from 'react';
+import { Route, Routes } from 'react-router-dom';
+import { ThemeProvider } from 'styled-components';
+import ConnectionStatus from './components/ConnectionStatus';
 import ProtectedRoute from './components/ProtectedRoute';
 import TokenExpirationAlert from './components/TokenExpirationAlert';
+import CreateQuizPage from './pages/CreateQuizPage';
+import HomePage from './pages/HomePage';
+import LeaderboardPage from './pages/LeaderboardPage';
+import LobbyPage from './pages/LobbyPage';
+import LoginPage from './pages/LoginPage';
+import QuizRoomPage from './pages/QuizRoomPage';
+import RegisterPage from './pages/RegisterPage';
+import { allianceTheme, hordeTheme } from './styles/themes';
 import { getValidToken } from './utils/auth';
 
 function App() {
@@ -104,6 +105,7 @@ function App() {
         />
       </Routes>
       <TokenExpirationAlert warningTime={5 * 60 * 1000} />
+      <ConnectionStatus />
     </ThemeProvider>
   );
 }

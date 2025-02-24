@@ -1,12 +1,11 @@
-import express from 'express';
 import bcrypt from 'bcrypt';
+import express from 'express';
 import jwt from 'jsonwebtoken';
-import db, { runTransaction } from '../models/db.js';
-import { authenticateToken } from '../middleware/auth.js';
-import { logAction } from '../models/logger.js';
 import config from '../config/config.js';
-import { logger } from '../logger.js';
-import { asyncHandler, AppError } from '../middleware/error.js';
+import { logAction, logger } from '../logger.js';
+import { authenticateToken } from '../middleware/auth.js';
+import { AppError, asyncHandler } from '../middleware/error.js';
+import db, { runTransaction } from '../models/db.js';
 
 const router = express.Router();
 
