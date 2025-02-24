@@ -147,7 +147,7 @@ const StartButton = styled(Button)`
 
 const LobbyPage = ({ user }) => {
   const { sessionId } = useParams();
-  const [players, setPlayers] = useState([]);
+  const [players, setPlayers] = useState([]); // Now stores {id, username} objects
   const [messages, setMessages] = useState([]);
   const [messageInput, setMessageInput] = useState('');
   const [countdown, setCountdown] = useState(null);
@@ -157,12 +157,12 @@ const LobbyPage = ({ user }) => {
 
   useEffect(() => {
     socket.emit('joinSession', { sessionId });
-    socket.on('playerJoined', (playerIds) => {
-      setPlayers(playerIds);
-      addMessage('System', `A new player has joined the lobby`);
+    socket.on('playerJoined', (players) => {
+      setPlayers(players);
+      addMessage('System', `${players[players.length - 1].username} has joined the lobby`);
     });
-    socket.on('playerLeft', (playerIds) => {
-      setPlayers(playerIds);
+    socket.on('playerLeft', (players) => {
+      setPlayers(players);
       addMessage('System', `A player has left the lobby`);
     });
     socket.on('chatMessage', ({ username, message }) => {
@@ -210,7 +210,7 @@ const LobbyPage = ({ user }) => {
     }, 50);
   };
 
-  const isHost = user.id === players[0];
+  const isHost = players.length > 0 && user.id === players[0]?.id;
 
   const leaveSession = () => {
     socket.emit('leaveSession', { sessionId });
@@ -224,21 +224,21 @@ const LobbyPage = ({ user }) => {
         <div>
           <h2>Players ({players.length})</h2>
           <PlayerGrid>
-            {players.map((playerId, index) => (
-              <PlayerCard 
-                key={playerId}
-                $isHost={index === 0}
-                $isNew={index === players.length - 1}
+            {players.map((player) => (
+              <PlayerCard
+                key={player.id}
+                $isHost={players[0]?.id === player.id}
+                $isNew={player === players[players.length - 1]}
               >
                 <Avatar>
-                  {(playerId === user.id ? user.username : `P${index + 1}`).charAt(0)}
+                  {player.username.charAt(0).toUpperCase()}
                 </Avatar>
                 <PlayerInfo>
                   <PlayerName>
-                    {playerId === user.id ? `${user.username} (You)` : `Player ${index + 1}`}
+                    {player.id === user.id ? `${player.username} (You)` : player.username}
                   </PlayerName>
                   <PlayerStatus>
-                    {index === 0 ? 'Host' : 'Ready'}
+                    {player.id === players[0]?.id ? 'Host' : 'Ready'}
                   </PlayerStatus>
                 </PlayerInfo>
               </PlayerCard>

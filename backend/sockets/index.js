@@ -48,21 +48,21 @@ const setupSockets = (io) => {
             
             socket.join(sessionId);
             db.all(
-              'SELECT user_id FROM quiz_session_players WHERE session_id = ?',
+              'SELECT qsp.user_id, u.username FROM quiz_session_players qsp JOIN users u ON qsp.user_id = u.id WHERE qsp.session_id = ?',
               [sessionId],
               (err, players) => {
                 if (err) {
-                  logger.error('Error fetching session players:', { 
-                    error: err.message, 
-                    sessionId 
+                  logger.error('Error fetching session players:', {
+                    error: err.message,
+                    sessionId
                   });
                   return;
                 }
-                logger.debug('Emitting player joined event:', { 
-                  sessionId, 
-                  playerCount: players.length 
+                logger.debug('Emitting player joined event:', {
+                  sessionId,
+                  playerCount: players.length
                 });
-                io.to(sessionId).emit('playerJoined', players.map((p) => p.user_id));
+                io.to(sessionId).emit('playerJoined', players.map((p) => ({ id: p.user_id, username: p.username })));
               }
             );
           }
@@ -88,7 +88,7 @@ const setupSockets = (io) => {
           logger.info('User left session successfully:', { sessionId, userId: socket.userId });
 
           db.all(
-            'SELECT user_id FROM quiz_session_players WHERE session_id = ?',
+            'SELECT qsp.user_id, u.username FROM quiz_session_players qsp JOIN users u ON qsp.user_id = u.id WHERE qsp.session_id = ?',
             [sessionId],
             (err, players) => {
               if (err) {
@@ -102,7 +102,7 @@ const setupSockets = (io) => {
                 sessionId,
                 playerCount: players.length
               });
-              io.to(sessionId).emit('playerLeft', players.map((p) => p.user_id));
+              io.to(sessionId).emit('playerLeft', players.map((p) => ({ id: p.user_id, username: p.username })));
             }
           );
         }
