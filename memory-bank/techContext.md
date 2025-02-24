@@ -1,6 +1,7 @@
 # Tech Context
 
 ## Technologies and Tools
+
 - **Frontend:**
   - **React & Vite:** Building a fast, modern single-page application.
   - **React Router:** Client-side routing for a dynamic multi-page experience.
@@ -15,6 +16,7 @@
   - **Database:** A local database (e.g., SQLite) is used, inferred from the presence of a database file.
 
 ## Development Environment
+
 - **Version Control:** Managed via Git (with a proper .gitignore).
 - **Dependency Management:** Utilizes package.json for both backend and frontend.
 - **Build Tools:** Vite for the frontend and typical Node.js build processes for the backend.

@@ -1,6 +1,7 @@
 # Progress Report
 
 ## Completed Work
+
 - **Frontend:**
   - Implemented main pages: LoginPage, RegisterPage, HomePage, LobbyPage, QuizRoomPage, LeaderboardPage.
   - Resolved ESLint issues and enforced PropTypes validations.
@@ -12,12 +13,14 @@
   - Real-time event handling for quiz interactions.
 
 ## Pending Tasks
+
 - **Testing:** Comprehensive end-to-end testing for user flows and real-time interactions.
 - **Documentation:** Finalizing backend API documentation and further refining the user guide.
 - **Performance Optimization:** Enhancing server performance and scalability for concurrent quiz sessions.
 - **UI Enhancements:** Further polish the UI/UX and add responsive design improvements.
 
 ## Next Steps
+
 - Integrate detailed logging and error handling on the backend.
 - Implement additional features such as quiz analytics and reporting.
 - Conduct user feedback sessions to refine the experience.
