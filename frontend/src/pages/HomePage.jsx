@@ -1,4 +1,5 @@
-import React, { useState, useEffect } from 'react';
+import { useState, useEffect } from 'react';
+import PropTypes from 'prop-types';
 import { useNavigate } from 'react-router-dom';
 import axios from 'axios';
 import styled from 'styled-components';
@@ -132,6 +133,15 @@ const HomePage = ({ user, updateTheme }) => {
       <Button onClick={() => navigate('/leaderboard')}>View Leaderboard</Button>
     </Container>
   );
+};
+
+HomePage.propTypes = {
+  user: PropTypes.shape({
+    username: PropTypes.string.isRequired,
+    theme: PropTypes.string,
+    id: PropTypes.string.isRequired
+  }),
+  updateTheme: PropTypes.func.isRequired
 };
 
 export default HomePage;

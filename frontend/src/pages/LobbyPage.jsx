@@ -1,4 +1,5 @@
-import React, { useState, useEffect } from 'react';
+import { useState, useEffect } from 'react';
+import PropTypes from 'prop-types';
 import { useParams, useNavigate } from 'react-router-dom';
 import socket from '../socket';
 import styled from 'styled-components';
@@ -49,6 +50,13 @@ const LobbyPage = ({ user }) => {
       {user.id === players[0] && <Button onClick={startQuiz}>Start Quiz</Button>}
     </Container>
   );
+};
+
+LobbyPage.propTypes = {
+  user: PropTypes.shape({
+    id: PropTypes.string.isRequired,
+    username: PropTypes.string.isRequired
+  }).isRequired
 };
 
 export default LobbyPage;

@@ -1,4 +1,5 @@
-import React, { useState } from 'react';
+import { useState } from 'react';
+import PropTypes from 'prop-types';
 import { useNavigate } from 'react-router-dom';
 import axios from 'axios';
 import styled from 'styled-components';
@@ -57,6 +58,10 @@ const LoginPage = ({ setUser }) => {
       <Button onClick={() => navigate('/register')}>Register</Button>
     </Container>
   );
+};
+
+LoginPage.propTypes = {
+  setUser: PropTypes.func.isRequired
 };
 
 export default LoginPage;

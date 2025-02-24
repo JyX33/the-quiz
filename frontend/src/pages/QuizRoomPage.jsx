@@ -1,4 +1,5 @@
-import React, { useEffect, useState } from 'react';
+import { useEffect, useState } from 'react';
+import PropTypes from 'prop-types';
 import { useParams } from 'react-router-dom';
 import styled from 'styled-components';
 import socket from '../socket';
@@ -23,7 +24,7 @@ const QuizRoomPage = ({ user }) => {
   const [currentQuestion, setCurrentQuestion] = useState(0);
   const [answer, setAnswer] = useState('');
   const [scores, setScores] = useState({});
-  const [isCreator, setIsCreator] = useState(false);
+  const [isCreator] = useState(false);
 
   useEffect(() => {
     // Check if user is creator (simplified, ideally fetch from backend)
@@ -81,5 +82,12 @@ const Input = styled.input`
   margin: 5px;
   padding: 8px;
 `;
+
+QuizRoomPage.propTypes = {
+  user: PropTypes.shape({
+    id: PropTypes.string.isRequired,
+    username: PropTypes.string.isRequired
+  }).isRequired
+};
 
 export default QuizRoomPage;
