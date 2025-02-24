@@ -1,14 +1,48 @@
-# System Patterns
+## Logging Patterns
 
-## Architectural Overview
+### Structured Logging Pattern
 
-- **Frontend & Backend Separation:** The app is divided into a React-based frontend and a Node.js backend, communicating via REST API and WebSockets.
-- **Real-Time Communication:** Utilizes WebSockets (via socket.js) to manage live quiz sessions, score updates, and state transitions.
-- **Theming with Styled Components:** Implements dynamic theming (Alliance vs. Horde) through styled-components, ensuring consistent UI based on user preference.
-- **State Management:** Uses React hooks (useState, useEffect) for managing component state and side effects.
+- Centralized logger configuration (backend/logger.js)
+- Consistent log format across all components
+- Metadata enrichment for context
 
-## Design Decisions
+### Error Handling Pattern
 
-- **RESTful API:** For user management, quiz creation, and data retrieval.
-- **WebSockets Integration:** To manage real-time events and deliver immediate user feedback.
-- **PropTypes for Robustness:** Added PropTypes across components to enforce type-checking and reduce runtime errors.
+```javascript
+try {
+  // Operation
+} catch (error) {
+  logger.error('Operation failed', {
+    error: error.message,
+    stack: error.stack,
+    context: { /* relevant data */ }
+  });
+  throw error;
+}
+```
+
+### HTTP Request Logging
+
+- Morgan middleware integration
+- Request/response cycle tracking
+- Performance monitoring capability
+
+### Database Operation Logging
+
+- Action tracking with user context
+- Transaction logging
+- Error state capture
+
+### System Event Logging
+
+- Application lifecycle events
+- Configuration changes
+- Security events
+
+### Log Level Usage
+
+- ERROR: Application failures requiring immediate attention
+- WARN: Potential issues or deprecated features
+- INFO: Important business events and state changes
+- HTTP: API request/response details
+- DEBUG: Detailed debugging information

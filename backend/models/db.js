@@ -1,16 +1,18 @@
-const sqlite3 = require('sqlite3').verbose();
-const config = require('../config/config');
+import * as sqlite3 from 'sqlite3';
+import config from '../config/config.js';
+import { logger } from '../logger.js';
 
 const db = new sqlite3.Database(config.dbPath, (err) => {
   if (err) {
-    console.error('Database connection error:', err);
+    logger.error('Database connection error:', { error: err.message, stack: err.stack });
   } else {
-    console.log('Connected to SQLite database');
+    logger.info('Connected to SQLite database');
   }
 });
 
 // Initialize database schema
 const initDb = () => {
+  logger.info('Initializing database schema');
   db.serialize(() => {
     db.run(`
       CREATE TABLE IF NOT EXISTS users (
@@ -76,10 +78,16 @@ const initDb = () => {
         FOREIGN KEY (user_id) REFERENCES users(id)
       )
     `);
+  }, (err) => {
+    if (err) {
+      logger.error('Schema initialization error:', { error: err.message, stack: err.stack });
+    } else {
+      logger.info('Database schema initialized successfully');
+    }
   });
 };
 
 // Initialize database
 initDb();
 
-module.exports = db;
+export default db;

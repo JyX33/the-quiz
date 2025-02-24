@@ -1,6 +1,7 @@
-const db = require('../models/db');
-const { logAction } = require('../models/logger');
-const { authenticateSocket } = require('../middleware/auth');
+import db from '../models/db.js';
+import { logAction } from '../models/logger.js';
+import { authenticateSocket } from '../middleware/auth.js';
+import { logger } from '../logger.js';
 
 // In-memory session scores
 const sessionScores = {};
@@ -10,24 +11,50 @@ const setupSockets = (io) => {
   io.use(authenticateSocket);
 
   io.on('connection', (socket) => {
-    console.log(`User ${socket.userId} connected`);
+    logger.info('User connected to socket', { userId: socket.userId });
 
     socket.on('joinSession', ({ sessionId }) => {
       db.get('SELECT * FROM quiz_sessions WHERE id = ?', [sessionId], (err, session) => {
-        if (err || !session) return socket.emit('error', 'Session not found');
+        if (err) {
+          logger.error('Error fetching session:', { error: err.message, sessionId });
+          return socket.emit('error', 'Session not found');
+        }
+        if (!session) {
+          logger.warn('Attempt to join non-existent session:', { sessionId, userId: socket.userId });
+          return socket.emit('error', 'Session not found');
+        }
         
         db.run(
           'INSERT OR IGNORE INTO quiz_session_players (session_id, user_id) VALUES (?, ?)',
           [sessionId, socket.userId],
           async (err) => {
-            if (err) return socket.emit('error', 'Failed to join session');
+            if (err) {
+              logger.error('Failed to join session:', { 
+                error: err.message, 
+                sessionId, 
+                userId: socket.userId 
+              });
+              return socket.emit('error', 'Failed to join session');
+            }
             await logAction(socket.userId, 'join_session');
+            logger.info('User joined session:', { sessionId, userId: socket.userId });
             
             socket.join(sessionId);
             db.all(
               'SELECT user_id FROM quiz_session_players WHERE session_id = ?',
               [sessionId],
               (err, players) => {
+                if (err) {
+                  logger.error('Error fetching session players:', { 
+                    error: err.message, 
+                    sessionId 
+                  });
+                  return;
+                }
+                logger.debug('Emitting player joined event:', { 
+                  sessionId, 
+                  playerCount: players.length 
+                });
                 io.to(sessionId).emit('playerJoined', players.map((p) => p.user_id));
               }
             );
@@ -41,7 +68,20 @@ const setupSockets = (io) => {
         'SELECT * FROM quiz_sessions WHERE id = ? AND creator_id = ?',
         [sessionId, socket.userId],
         async (err, session) => {
-          if (err || !session) return socket.emit('error', 'Unauthorized or session not found');
+          if (err) {
+            logger.error('Error checking session for start:', { 
+              error: err.message, 
+              sessionId 
+            });
+            return socket.emit('error', 'Failed to start quiz');
+          }
+          if (!session) {
+            logger.warn('Unauthorized quiz start attempt:', { 
+              sessionId, 
+              userId: socket.userId 
+            });
+            return socket.emit('error', 'Unauthorized or session not found');
+          }
           
           db.run(
             'UPDATE quiz_sessions SET status = ? WHERE id = ?',
@@ -133,7 +173,11 @@ const setupSockets = (io) => {
                 io.to(sessionId).emit('quizEnded', scores);
                 delete sessionScores[sessionId];
               } catch (err) {
-                console.error('Error saving scores:', err);
+logger.error('Error saving quiz scores:', { 
+  error: err.message, 
+  sessionId, 
+  playerCount: Object.keys(scores).length 
+});
                 socket.emit('error', 'Failed to save scores');
               }
             }
@@ -143,9 +187,9 @@ const setupSockets = (io) => {
     });
 
     socket.on('disconnect', () => {
-      console.log(`User ${socket.userId} disconnected`);
+    logger.info('User disconnected from socket', { userId: socket.userId });
     });
   });
 };
 
-module.exports = setupSockets;
+export default setupSockets;
