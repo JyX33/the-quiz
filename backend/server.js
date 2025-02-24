@@ -15,6 +15,7 @@ import { Server } from 'socket.io';
 import morgan from 'morgan';
 import config from './config/config.js';
 import { logger, stream } from './logger.js';
+import db from './models/db.js';
 
 // Try loading cookie-parser (it might not be installed yet)
 let cookieParser;
@@ -76,25 +77,57 @@ setupSockets(io);
 app.use(notFoundHandler); // Handle 404 errors for unmatched routes
 app.use(errorHandler); // Global error handler
 
+// Function to perform graceful shutdown
+const gracefulShutdown = async (signal) => {
+  logger.info(`${signal} received. Starting graceful shutdown...`);
+  
+  // Close HTTP server (stop accepting new connections)
+  server.close(() => {
+    logger.info('HTTP server closed');
+  });
+  
+  // Close Socket.IO connections
+  io.close(() => {
+    logger.info('Socket.IO connections closed');
+  });
+  
+  // Close database connection
+  db.close((err) => {
+    if (err) {
+      logger.error('Error closing database:', err);
+    } else {
+      logger.info('Database connection closed');
+    }
+    
+    // Exit process after resources are closed
+    logger.info('Graceful shutdown completed');
+    process.exit(err ? 1 : 0);
+  });
+  
+  // Force exit after timeout in case something hangs
+  setTimeout(() => {
+    logger.error('Forced shutdown due to timeout');
+    process.exit(1);
+  }, 5000); // 5 seconds timeout
+};
+
 // Start server
 server.listen(config.port, () => {
   logger.info(`Server running on port ${config.port}`);
 });
 
+// Handle process signals for graceful shutdown
+process.on('SIGTERM', () => gracefulShutdown('SIGTERM'));
+process.on('SIGINT', () => gracefulShutdown('SIGINT'));
+
 // Handle uncaught exceptions with graceful shutdown
 process.on('uncaughtException', (error) => {
   logger.error('Uncaught Exception:', error);
-  // Attempt graceful shutdown
-  setTimeout(() => {
-    process.exit(1);
-  }, 1000);
+  gracefulShutdown('uncaughtException');
 });
 
 // Handle unhandled promise rejections with graceful shutdown
 process.on('unhandledRejection', (reason, promise) => {
   logger.error('Unhandled Rejection at:', promise, 'reason:', reason);
-  // Attempt graceful shutdown
-  setTimeout(() => {
-    process.exit(1);
-  }, 1000);
+  gracefulShutdown('unhandledRejection');
 });

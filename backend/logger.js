@@ -64,6 +64,46 @@ const stream = {
   write: (message) => logger.http(message.trim()),
 };
 
+/**
+ * Log user actions to the database
+ * Moved from models/logger.js to consolidate logging functionality
+ * @param {Object} db - Database connection
+ * @param {number} userId - User ID
+ * @param {string} action - Description of the action
+ * @returns {Promise<number>} - ID of the logged action
+ */
+const logUserAction = async (db, userId, action) => {
+  try {
+    const result = await new Promise((resolve, reject) => {
+      db.run(
+        'INSERT INTO logs (user_id, action) VALUES (?, ?)',
+        [userId, action],
+        function (err) {
+          if (err) reject(err);
+          else resolve(this.lastID);
+        }
+      );
+    });
+
+    // Log the action using Winston
+    logger.info(`User Action: ${action}`, {
+      userId,
+      actionId: result,
+      timestamp: new Date().toISOString()
+    });
+
+    return result;
+  } catch (error) {
+    logger.error('Database logging error:', {
+      userId,
+      action,
+      error: error.message,
+      stack: error.stack
+    });
+    throw error;
+  }
+};
+
 // Add environment info to startup
 logger.info('Logger initialized', {
   environment: process.env.NODE_ENV || 'development',
@@ -71,4 +111,4 @@ logger.info('Logger initialized', {
   logFiles: config.logging.files
 });
 
-export { logger, stream };
+export { logger, stream, logUserAction };

@@ -10,11 +10,66 @@ const db = new sqlite3.Database(config.dbPath, (err) => {
   }
 });
 
+/**
+ * Promisify SQLite db.run method
+ * @param {string} sql - SQL query to run
+ * @param {Array} params - Parameters for the SQL query
+ * @returns {Promise<object>} - Promise that resolves with the result object
+ */
+db.runAsync = function(sql, params = []) {
+  return new Promise((resolve, reject) => {
+    this.run(sql, params, function(err) {
+      if (err) {
+        reject(err);
+      } else {
+        resolve({ lastID: this.lastID, changes: this.changes });
+      }
+    });
+  });
+};
+
+/**
+ * Promisify SQLite db.get method
+ * @param {string} sql - SQL query to run
+ * @param {Array} params - Parameters for the SQL query
+ * @returns {Promise<object>} - Promise that resolves with a single row
+ */
+db.getAsync = function(sql, params = []) {
+  return new Promise((resolve, reject) => {
+    this.get(sql, params, function(err, row) {
+      if (err) {
+        reject(err);
+      } else {
+        resolve(row);
+      }
+    });
+  });
+};
+
+/**
+ * Promisify SQLite db.all method
+ * @param {string} sql - SQL query to run
+ * @param {Array} params - Parameters for the SQL query
+ * @returns {Promise<Array>} - Promise that resolves with all rows
+ */
+db.allAsync = function(sql, params = []) {
+  return new Promise((resolve, reject) => {
+    this.all(sql, params, function(err, rows) {
+      if (err) {
+        reject(err);
+      } else {
+        resolve(rows);
+      }
+    });
+  });
+};
+
 // Initialize database schema
-const initDb = () => {
+const initDb = async () => {
   logger.info('Initializing database schema');
-  db.serialize(() => {
-    db.run(`
+  
+  try {
+    await db.runAsync(`
       CREATE TABLE IF NOT EXISTS users (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
         username TEXT UNIQUE NOT NULL,
@@ -23,7 +78,7 @@ const initDb = () => {
       )
     `);
 
-    db.run(`
+    await db.runAsync(`
       CREATE TABLE IF NOT EXISTS quizzes (
         id TEXT PRIMARY KEY,
         creator_id INTEGER,
@@ -34,7 +89,7 @@ const initDb = () => {
       )
     `);
 
-    db.run(`
+    await db.runAsync(`
       CREATE TABLE IF NOT EXISTS quiz_sessions (
         id TEXT PRIMARY KEY,
         quiz_id TEXT,
@@ -46,7 +101,7 @@ const initDb = () => {
       )
     `);
 
-    db.run(`
+    await db.runAsync(`
       CREATE TABLE IF NOT EXISTS quiz_session_players (
         session_id TEXT,
         user_id INTEGER,
@@ -56,7 +111,7 @@ const initDb = () => {
       )
     `);
 
-    db.run(`
+    await db.runAsync(`
       CREATE TABLE IF NOT EXISTS scores (
         session_id TEXT,
         user_id INTEGER,
@@ -69,7 +124,7 @@ const initDb = () => {
       )
     `);
 
-    db.run(`
+    await db.runAsync(`
       CREATE TABLE IF NOT EXISTS logs (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
         user_id INTEGER,
@@ -78,13 +133,11 @@ const initDb = () => {
         FOREIGN KEY (user_id) REFERENCES users(id)
       )
     `);
-  }, (err) => {
-    if (err) {
-      logger.error('Schema initialization error:', { error: err.message, stack: err.stack });
-    } else {
-      logger.info('Database schema initialized successfully');
-    }
-  });
+    
+    logger.info('Database schema initialized successfully');
+  } catch (err) {
+    logger.error('Schema initialization error:', { error: err.message, stack: err.stack });
+  }
 };
 
 /**
@@ -116,8 +169,23 @@ const runTransaction = async (operations) => {
   });
 };
 
+// Convert the runTransaction function to use async/await pattern
+const runTransactionAsync = async (operationsAsync) => {
+  await db.runAsync('BEGIN TRANSACTION');
+  
+  try {
+    const results = await operationsAsync();
+    await db.runAsync('COMMIT');
+    return results;
+  } catch (error) {
+    logger.error('Transaction error:', { error: error.message, stack: error.stack });
+    await db.runAsync('ROLLBACK');
+    throw error;
+  }
+};
+
 // Initialize database
 initDb();
 
-export { runTransaction };
+export { runTransaction, runTransactionAsync };
 export default db;

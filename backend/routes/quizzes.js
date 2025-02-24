@@ -1,6 +1,6 @@
 import express from 'express';
 import { v4 as uuidv4 } from 'uuid';
-import db, { runTransaction } from '../models/db.js';
+import db, { runTransaction, runTransactionAsync } from '../models/db.js';
 import { authenticateToken } from '../middleware/auth.js';
 import { logAction } from '../models/logger.js';
 import { logger } from '../logger.js';
@@ -36,27 +36,18 @@ router.post('/', authenticateToken, asyncHandler(async (req, res, next) => {
 
   try {
     // Use transaction to ensure quiz creation and logging happens atomically
-    await runTransaction(() => {
-      return new Promise((resolve, reject) => {
-        db.run(
-          'INSERT INTO quizzes (id, creator_id, questions, category, difficulty) VALUES (?, ?, ?, ?, ?)',
-          [quizId, req.user.id, JSON.stringify(questions), category, difficulty],
-          function (err) {
-            if (err) reject(err);
-            else {
-              // Log the action within the transaction
-              db.run(
-                'INSERT INTO logs (user_id, action) VALUES (?, ?)',
-                [req.user.id, 'create_quiz'],
-                (err) => {
-                  if (err) reject(err);
-                  else resolve();
-                }
-              );
-            }
-          }
-        );
-      });
+    await runTransactionAsync(async () => {
+      // Insert quiz using promise-based approach
+      await db.runAsync(
+        'INSERT INTO quizzes (id, creator_id, questions, category, difficulty) VALUES (?, ?, ?, ?, ?)',
+        [quizId, req.user.id, JSON.stringify(questions), category, difficulty]
+      );
+      
+      // Log the action within the transaction
+      await db.runAsync(
+        'INSERT INTO logs (user_id, action) VALUES (?, ?)',
+        [req.user.id, 'create_quiz']
+      );
     });
     
     logger.info('Quiz created successfully:', { quizId, userId: req.user.id });
@@ -70,27 +61,70 @@ router.post('/', authenticateToken, asyncHandler(async (req, res, next) => {
   }
 }));
 
-// Get user's quizzes
+// Get user's quizzes with pagination
 router.get('/', authenticateToken, asyncHandler(async (req, res, next) => {
-  logger.debug('Fetching user quizzes:', { userId: req.user.id });
+  // Parse pagination parameters
+  const page = parseInt(req.query.page) || 1;
+  const limit = parseInt(req.query.limit) || 10;
+  
+  // Validate pagination parameters
+  if (page < 1 || limit < 1 || limit > 100) {
+    throw new AppError('Invalid pagination parameters', 400, 'VALIDATION_ERROR');
+  }
+  
+  // Calculate offset
+  const offset = (page - 1) * limit;
+  
+  logger.debug('Fetching user quizzes with pagination:', { 
+    userId: req.user.id,
+    page,
+    limit,
+    offset
+  });
 
-  const quizzes = await new Promise((resolve, reject) => {
-    db.all(
-      'SELECT id, category, difficulty FROM quizzes WHERE creator_id = ?',
-      [req.user.id],
-      (err, rows) => {
-        if (err) reject(err);
-        else resolve(rows || []);
-      }
+  try {
+    // Get total count for pagination info
+    const countResult = await db.getAsync(
+      'SELECT COUNT(*) as total FROM quizzes WHERE creator_id = ?',
+      [req.user.id]
     );
-  });
-  
-  logger.info('User quizzes retrieved:', { 
-    userId: req.user.id, 
-    quizCount: quizzes.length 
-  });
-  
-  res.json(quizzes);
+    
+    const total = countResult ? countResult.total : 0;
+    const totalPages = Math.ceil(total / limit);
+    
+    // Get quizzes with pagination
+    const quizzes = await db.allAsync(
+      'SELECT id, category, difficulty FROM quizzes WHERE creator_id = ? LIMIT ? OFFSET ?',
+      [req.user.id, limit, offset]
+    );
+    
+    logger.info('User quizzes retrieved with pagination:', { 
+      userId: req.user.id, 
+      quizCount: quizzes.length,
+      page,
+      totalPages,
+      total
+    });
+    
+    // Return paginated response
+    res.json({
+      data: quizzes,
+      pagination: {
+        total,
+        totalPages,
+        currentPage: page,
+        limit,
+        hasNextPage: page < totalPages,
+        hasPrevPage: page > 1
+      }
+    });
+  } catch (error) {
+    logger.error('Failed to fetch quizzes:', {
+      error: error.message,
+      userId: req.user.id
+    });
+    throw new AppError('Failed to fetch quizzes', 500, 'DATABASE_ERROR');
+  }
 }));
 
 // Get quiz by ID
@@ -102,27 +136,30 @@ router.get('/:id', authenticateToken, asyncHandler(async (req, res, next) => {
     userId: req.user.id 
   });
 
-  const quiz = await new Promise((resolve, reject) => {
-    db.get(
+  try {
+    const quiz = await db.getAsync(
       'SELECT id, creator_id, questions, category, difficulty FROM quizzes WHERE id = ?',
-      [quizId],
-      (err, quiz) => {
-        if (err) reject(err);
-        else resolve(quiz);
-      }
+      [quizId]
     );
-  });
-  
-  if (!quiz) {
-    throw new AppError('Quiz not found', 404, 'QUIZ_NOT_FOUND');
+    
+    if (!quiz) {
+      throw new AppError('Quiz not found', 404, 'QUIZ_NOT_FOUND');
+    }
+    
+    logger.info('Quiz retrieved successfully:', { 
+      quizId,
+      userId: req.user.id 
+    });
+    
+    res.json(quiz);
+  } catch (error) {
+    logger.error('Failed to fetch quiz:', {
+      error: error.message,
+      quizId,
+      userId: req.user.id
+    });
+    throw new AppError('Failed to fetch quiz', 500, 'DATABASE_ERROR');
   }
-  
-  logger.info('Quiz retrieved successfully:', { 
-    quizId,
-    userId: req.user.id 
-  });
-  
-  res.json(quiz);
 }));
 
 // Delete quiz
@@ -134,60 +171,40 @@ router.delete('/:id', authenticateToken, asyncHandler(async (req, res, next) => 
     userId: req.user.id 
   });
 
-  // Check if quiz exists and belongs to user
-  const quiz = await new Promise((resolve, reject) => {
-    db.get(
-      'SELECT id, creator_id FROM quizzes WHERE id = ?',
-      [quizId],
-      (err, quiz) => {
-        if (err) reject(err);
-        else resolve(quiz);
-      }
-    );
-  });
-  
-  if (!quiz) {
-    throw new AppError('Quiz not found', 404, 'QUIZ_NOT_FOUND');
-  }
-  
-  if (quiz.creator_id !== req.user.id) {
-    throw new AppError('You do not have permission to delete this quiz', 403, 'PERMISSION_DENIED');
-  }
-  
   try {
+    // Check if quiz exists and belongs to user
+    const quiz = await db.getAsync(
+      'SELECT id, creator_id FROM quizzes WHERE id = ?',
+      [quizId]
+    );
+    
+    if (!quiz) {
+      throw new AppError('Quiz not found', 404, 'QUIZ_NOT_FOUND');
+    }
+    
+    if (quiz.creator_id !== req.user.id) {
+      throw new AppError('You do not have permission to delete this quiz', 403, 'PERMISSION_DENIED');
+    }
+    
     // Use transaction to ensure quiz deletion and logging happens atomically
-    await runTransaction(() => {
-      return new Promise((resolve, reject) => {
-        // Delete any related sessions
-        db.run(
-          'DELETE FROM quiz_sessions WHERE quiz_id = ?',
-          [quizId],
-          function (err) {
-            if (err) reject(err);
-            else {
-              // Delete the quiz
-              db.run(
-                'DELETE FROM quizzes WHERE id = ?',
-                [quizId],
-                function (err) {
-                  if (err) reject(err);
-                  else {
-                    // Log the action within the transaction
-                    db.run(
-                      'INSERT INTO logs (user_id, action) VALUES (?, ?)',
-                      [req.user.id, 'delete_quiz'],
-                      (err) => {
-                        if (err) reject(err);
-                        else resolve();
-                      }
-                    );
-                  }
-                }
-              );
-            }
-          }
-        );
-      });
+    await runTransactionAsync(async () => {
+      // Delete any related sessions
+      await db.runAsync(
+        'DELETE FROM quiz_sessions WHERE quiz_id = ?',
+        [quizId]
+      );
+      
+      // Delete the quiz
+      await db.runAsync(
+        'DELETE FROM quizzes WHERE id = ?',
+        [quizId]
+      );
+      
+      // Log the action within the transaction
+      await db.runAsync(
+        'INSERT INTO logs (user_id, action) VALUES (?, ?)',
+        [req.user.id, 'delete_quiz']
+      );
     });
     
     logger.info('Quiz deleted successfully:', { quizId, userId: req.user.id });
