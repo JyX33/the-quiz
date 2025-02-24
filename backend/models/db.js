@@ -87,7 +87,37 @@ const initDb = () => {
   });
 };
 
+/**
+ * Executes a function within a database transaction
+ * @param {Function} operations - A function containing database operations to execute within the transaction
+ * @returns {Promise<any>} - Resolves with the result of the operations or rejects with an error
+ */
+const runTransaction = async (operations) => {
+  return new Promise((resolve, reject) => {
+    db.serialize(() => {
+      db.run('BEGIN TRANSACTION');
+      try {
+        const results = operations();
+        db.run('COMMIT', (err) => {
+          if (err) {
+            logger.error('Transaction commit error:', { error: err.message, stack: err.stack });
+            db.run('ROLLBACK');
+            reject(err);
+          } else {
+            resolve(results);
+          }
+        });
+      } catch (error) {
+        logger.error('Transaction error:', { error: error.message, stack: error.stack });
+        db.run('ROLLBACK');
+        reject(error);
+      }
+    });
+  });
+};
+
 // Initialize database
 initDb();
 
+export { runTransaction };
 export default db;

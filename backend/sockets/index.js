@@ -1,4 +1,4 @@
-import db from '../models/db.js';
+import db, { runTransaction } from '../models/db.js';
 import { logAction } from '../models/logger.js';
 import { authenticateSocket } from '../middleware/auth.js';
 import { logger } from '../logger.js';
@@ -244,40 +244,82 @@ const setupSockets = (io) => {
         (err, session) => {
           if (err || !session) return socket.emit('error', 'Unauthorized or session not found');
           
-          db.run(
-            'UPDATE quiz_sessions SET status = ? WHERE id = ?',
-            ['finished', sessionId],
-            async (err) => {
-              if (err) return socket.emit('error', 'Failed to end quiz');
-              
-              const scores = sessionScores[sessionId] || {};
-              const savePromises = Object.entries(scores).map(([userId, data]) => {
-                return new Promise((resolve, reject) => {
-                  db.run(
-                    'INSERT INTO scores (session_id, user_id, score, correct_answers, time_taken) VALUES (?, ?, ?, ?, ?)',
-                    [sessionId, userId, data.score, data.correct, 0],
-                    (err) => {
-                      if (err) reject(err);
-                      else resolve();
-                    }
-                  );
-                });
-              });
-
-              try {
-                await Promise.all(savePromises);
-                io.to(sessionId).emit('quizEnded', scores);
-                delete sessionScores[sessionId];
-              } catch (err) {
-logger.error('Error saving quiz scores:', { 
-  error: err.message, 
-  sessionId, 
-  playerCount: Object.keys(scores).length 
-});
-                socket.emit('error', 'Failed to save scores');
-              }
-            }
-          );
+          runTransaction(() => {
+            return new Promise((resolve, reject) => {
+              // First update the session status to finished
+              db.run(
+                'UPDATE quiz_sessions SET status = ? WHERE id = ?',
+                ['finished', sessionId],
+                (err) => {
+                  if (err) {
+                    reject(err);
+                    return;
+                  }
+                  
+                  const scores = sessionScores[sessionId] || {};
+                  const playerIds = Object.keys(scores);
+                  
+                  if (playerIds.length === 0) {
+                    // No scores to save
+                    resolve();
+                    return;
+                  }
+                  
+                  // Use a counter to track when all scores are saved
+                  let completed = 0;
+                  let hasError = false;
+                  
+                  playerIds.forEach((userId) => {
+                    const data = scores[userId];
+                    db.run(
+                      'INSERT INTO scores (session_id, user_id, score, correct_answers, time_taken) VALUES (?, ?, ?, ?, ?)',
+                      [sessionId, userId, data.score, data.correct, 0],
+                      (err) => {
+                        completed++;
+                        
+                        if (err && !hasError) {
+                          hasError = true;
+                          reject(err);
+                          return;
+                        }
+                        
+                        if (completed === playerIds.length && !hasError) {
+                          // Log the action
+                          db.run(
+                            'INSERT INTO logs (user_id, action) VALUES (?, ?)',
+                            [socket.userId, 'end_quiz'],
+                            (err) => {
+                              if (err) reject(err);
+                              else resolve();
+                            }
+                          );
+                        }
+                      }
+                    );
+                  });
+                }
+              );
+            });
+          })
+          .then(() => {
+            const scores = sessionScores[sessionId] || {};
+            io.to(sessionId).emit('quizEnded', scores);
+            delete sessionScores[sessionId];
+            delete sessionResponses[sessionId];
+            logger.info('Quiz ended successfully:', { 
+              sessionId, 
+              userId: socket.userId,
+              playerCount: Object.keys(scores).length
+            });
+          })
+          .catch((err) => {
+            logger.error('Error saving quiz scores:', { 
+              error: err.message, 
+              sessionId, 
+              userId: socket.userId
+            });
+            socket.emit('error', 'Failed to save scores');
+          });
         }
       );
     });

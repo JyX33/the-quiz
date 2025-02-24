@@ -33,6 +33,9 @@ import sessionRoutes from './routes/sessions.js';
 // Import socket setup
 import setupSockets from './sockets/index.js';
 
+// Import error handling middleware
+import { errorHandler, notFoundHandler } from './middleware/error.js';
+
 // Create Express app and HTTP server
 const app = express();
 const server = http.createServer(app);
@@ -69,19 +72,29 @@ app.use('/api/sessions', sessionRoutes);
 // Initialize socket handlers
 setupSockets(io);
 
+// Error handling middleware - must be placed after routes
+app.use(notFoundHandler); // Handle 404 errors for unmatched routes
+app.use(errorHandler); // Global error handler
+
 // Start server
 server.listen(config.port, () => {
   logger.info(`Server running on port ${config.port}`);
 });
 
-// Handle uncaught exceptions
+// Handle uncaught exceptions with graceful shutdown
 process.on('uncaughtException', (error) => {
   logger.error('Uncaught Exception:', error);
-  process.exit(1);
+  // Attempt graceful shutdown
+  setTimeout(() => {
+    process.exit(1);
+  }, 1000);
 });
 
-// Handle unhandled promise rejections
+// Handle unhandled promise rejections with graceful shutdown
 process.on('unhandledRejection', (reason, promise) => {
   logger.error('Unhandled Rejection at:', promise, 'reason:', reason);
-  process.exit(1);
+  // Attempt graceful shutdown
+  setTimeout(() => {
+    process.exit(1);
+  }, 1000);
 });
