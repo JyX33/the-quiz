@@ -1,12 +1,12 @@
-import { useState } from 'react';
-import PropTypes from 'prop-types';
-import { useNavigate } from 'react-router-dom';
 import axios from 'axios';
+import PropTypes from 'prop-types';
+import { useEffect, useState } from 'react';
+import { useNavigate } from 'react-router-dom';
 import styled from 'styled-components';
 import {
-  PageContainer,
   Button,
   Input,
+  PageContainer,
   Select,
 } from '../components/shared/StyledComponents';
 
@@ -56,6 +56,12 @@ const HomePage = ({ user, updateTheme }) => {
   const [sessionId, setSessionId] = useState('');
   const [error, setError] = useState('');
   const navigate = useNavigate();
+
+  useEffect(() => {
+    if (!localStorage.getItem('token')) {
+      navigate('/');
+    }
+  }, [user, navigate]);
 
   const handleJoinSession = async () => {
     try {

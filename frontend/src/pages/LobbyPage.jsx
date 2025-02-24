@@ -212,6 +212,11 @@ const LobbyPage = ({ user }) => {
 
   const isHost = user.id === players[0];
 
+  const leaveSession = () => {
+    socket.emit('leaveSession', { sessionId });
+    navigate('/home');
+  };
+
   return (
     <PageContainer>
       <Title>Waiting Room</Title>
@@ -246,11 +251,14 @@ const LobbyPage = ({ user }) => {
               disabled={players.length < 2 || countdown !== null}
               $progress={startProgress}
             >
-              {players.length < 2 
-                ? 'Waiting for more players...' 
+              {players.length < 2
+                ? 'Waiting for more players...'
                 : 'Start Quiz'}
             </StartButton>
           )}
+          <Button onClick={() => leaveSession()} $variant="secondary">
+            Leave Session
+          </Button>
         </div>
 
         <ChatSection>

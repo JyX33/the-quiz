@@ -6,12 +6,19 @@ import { logger } from '../logger.js';
 // In-memory session scores
 const sessionScores = {};
 
+const lastHeartbeat = {};
+
 const setupSockets = (io) => {
   // Socket authentication middleware
   io.use(authenticateSocket);
 
   io.on('connection', (socket) => {
     logger.info('User connected to socket', { userId: socket.userId });
+
+    // Heartbeat handling
+    socket.on('heartbeat', () => {
+      lastHeartbeat[socket.userId] = Date.now();
+    });
 
     socket.on('joinSession', ({ sessionId }) => {
       db.get('SELECT * FROM quiz_sessions WHERE id = ?', [sessionId], (err, session) => {
@@ -61,6 +68,45 @@ const setupSockets = (io) => {
           }
         );
       });
+    });
+
+    socket.on('leaveSession', ({ sessionId }) => {
+      logger.info('User leaving session:', { sessionId, userId: socket.userId });
+      db.run(
+        'DELETE FROM quiz_session_players WHERE session_id = ? AND user_id = ?',
+        [sessionId, socket.userId],
+        async (err) => {
+          if (err) {
+            logger.error('Failed to leave session:', {
+              error: err.message,
+              sessionId,
+              userId: socket.userId
+            });
+            return socket.emit('error', 'Failed to leave session');
+          }
+          await logAction(socket.userId, 'leave_session');
+          logger.info('User left session successfully:', { sessionId, userId: socket.userId });
+
+          db.all(
+            'SELECT user_id FROM quiz_session_players WHERE session_id = ?',
+            [sessionId],
+            (err, players) => {
+              if (err) {
+                logger.error('Error fetching session players:', {
+                  error: err.message,
+                  sessionId
+                });
+                return;
+              }
+              logger.debug('Emitting player left event:', {
+                sessionId,
+                playerCount: players.length
+              });
+              io.to(sessionId).emit('playerLeft', players.map((p) => p.user_id));
+            }
+          );
+        }
+      );
     });
 
     socket.on('startQuiz', ({ sessionId }) => {
@@ -187,9 +233,84 @@ logger.error('Error saving quiz scores:', {
     });
 
     socket.on('disconnect', () => {
-    logger.info('User disconnected from socket', { userId: socket.userId });
+      logger.info('User disconnected from socket', { userId: socket.userId });
     });
   });
 };
 
-export default setupSockets;
+const SESSION_TIMEOUT = 15000; // 15 seconds
+
+function cleanupInactiveSessions(io) {
+  setInterval(() => {
+    const now = Date.now();
+
+    for (const userId in lastHeartbeat) {
+      if (now - lastHeartbeat[userId] > SESSION_TIMEOUT) {
+        logger.warn('Disconnecting inactive user:', { userId });
+        delete lastHeartbeat[userId];
+
+        // Find the session and remove the player
+        db.get(
+          'SELECT session_id FROM quiz_session_players WHERE user_id = ?',
+          [userId],
+          (err, result) => {
+            if (err) {
+              logger.error('Error finding session for inactive user:', {
+                error: err.message,
+                userId
+              });
+              return;
+            }
+
+            if (result) {
+              const { session_id } = result;
+
+              db.run(
+                'DELETE FROM quiz_session_players WHERE session_id = ? AND user_id = ?',
+                [session_id, userId],
+                (err) => {
+                  if (err) {
+                    logger.error('Error removing inactive user from session:', {
+                      error: err.message,
+                      userId,
+                      sessionId: session_id
+                    });
+                    return;
+                  }
+                  logger.info('Removed inactive user from session:', { userId, sessionId: session_id });
+                  io.to(session_id).emit('playerLeft', userId); // Notify other clients
+                }
+              );
+
+              // Check if the session is now empty
+              db.get(
+                'SELECT COUNT(*) AS count FROM quiz_session_players WHERE session_id = ?',
+                [session_id],
+                (err, result) => {
+                  if (err) {
+                    logger.error('Error counting players in session:', {
+                      error: err.message,
+                      sessionId: session_id
+                    });
+                    return;
+                  }
+
+                  if (result.count === 0) {
+                    logger.info('Cleaning up empty session:', { sessionId: session_id });
+                    // Optionally, perform cleanup actions like marking the session as finished
+                    // or deleting the session from the database
+                  }
+                }
+              );
+            }
+          }
+        );
+      }
+    }
+  }, 10000); // Check every 10 seconds
+}
+
+export default (io) => {
+  setupSockets(io);
+  cleanupInactiveSessions(io);
+};

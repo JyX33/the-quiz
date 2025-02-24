@@ -29,6 +29,24 @@ router.post('/', authenticateToken, async (req, res) => {
         });
         return res.status(400).json({ error: err.message });
       }
+
+      // Add the session creator to the quiz_session_players table
+      db.run(
+        'INSERT INTO quiz_session_players (session_id, user_id) VALUES (?, ?)',
+        [sessionId, req.user.id],
+        (err) => {
+          if (err) {
+            logger.error('Failed to add session creator to quiz_session_players:', {
+              error: err.message,
+              sessionId,
+              userId: req.user.id
+            });
+            // Do not return an error to the client, as the session was still created
+          }
+          logger.info('Session creator added to quiz_session_players:', { sessionId, userId: req.user.id });
+        }
+      );
+
       await logAction(req.user.id, 'create_session');
       logger.info('Quiz session created successfully:', { 
         sessionId, 

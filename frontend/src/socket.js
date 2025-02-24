@@ -6,4 +6,9 @@ const socket = io('http://localhost:5000', {
   },
 });
 
+// Heartbeat mechanism
+setInterval(() => {
+  socket.emit('heartbeat');
+}, 5000); // Emit heartbeat every 5 seconds
+
 export default socket;
