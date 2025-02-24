@@ -9,6 +9,8 @@ import {
   PageContainer,
   Select,
 } from '../components/shared/StyledComponents';
+import LoadingSpinner from '../components/shared/LoadingSpinner';
+import { getValidToken } from '../utils/auth';
 
 const TopBar = styled.div`
   position: absolute;
@@ -55,20 +57,37 @@ const ErrorMessage = styled.div`
 const HomePage = ({ user, updateTheme }) => {
   const [sessionId, setSessionId] = useState('');
   const [error, setError] = useState('');
+  const [isLoading, setIsLoading] = useState(false);
+  const [isJoining, setIsJoining] = useState(false);
   const navigate = useNavigate();
 
   useEffect(() => {
-    if (!localStorage.getItem('token')) {
+    const token = getValidToken();
+    if (!token) {
       navigate('/');
     }
-  }, [user, navigate]);
+  }, [navigate]);
 
   const handleJoinSession = async () => {
+    if (!sessionId.trim()) {
+      setError('Please enter a session ID');
+      return;
+    }
+
     try {
       setError('');
+      setIsJoining(true);
+      
+      const token = getValidToken();
+      if (!token) {
+        navigate('/');
+        return;
+      }
+
       const response = await axios.get(`http://localhost:5000/api/sessions/${sessionId}`, {
-        headers: { Authorization: `Bearer ${localStorage.getItem('token')}` }
+        headers: { Authorization: `Bearer ${token}` }
       });
+      
       if (response.data) {
         navigate(`/lobby/${sessionId}`);
       }
@@ -78,44 +97,74 @@ const HomePage = ({ user, updateTheme }) => {
       } else {
         setError('Error joining session. Please try again.');
       }
+      setIsJoining(false);
     }
+  };
+
+  const handleCreateQuiz = () => {
+    setIsLoading(true);
+    navigate('/create-quiz');
+  };
+
+  const handleLogout = () => {
+    localStorage.removeItem('token');
+    navigate('/');
   };
 
   return (
     <PageContainer>
       <TopBar>
-        <ThemeSelect onChange={(e) => updateTheme(e.target.value)} value={user?.theme || 'Alliance'}>
+        <ThemeSelect 
+          onChange={(e) => updateTheme(e.target.value)} 
+          value={user?.theme || 'Alliance'}
+          disabled={isLoading || isJoining}
+        >
           <option value="Alliance">Alliance Theme</option>
           <option value="Horde">Horde Theme</option>
         </ThemeSelect>
         <Button 
-          onClick={() => {
-            localStorage.removeItem('token');
-            navigate('/');
-          }}
+          onClick={handleLogout}
           $variant="secondary"
+          disabled={isLoading || isJoining}
         >
           Logout
         </Button>
       </TopBar>
 
       <MainContent>
-        <Button onClick={() => navigate('/create-quiz')}>Create Quiz</Button>
-        
-        <ActionContainer>
-          <InputGroup>
-            <Input 
-              placeholder="Session ID" 
-              value={sessionId} 
-              onChange={(e) => {
-                setError('');
-                setSessionId(e.target.value);
-              }}
-            />
-            <Button onClick={handleJoinSession}>Join Session</Button>
-          </InputGroup>
-          {error && <ErrorMessage>{error}</ErrorMessage>}
-        </ActionContainer>
+        {isLoading ? (
+          <LoadingSpinner />
+        ) : (
+          <>
+            <Button 
+              onClick={handleCreateQuiz}
+              disabled={isJoining}
+            >
+              Create Quiz
+            </Button>
+            
+            <ActionContainer>
+              <InputGroup>
+                <Input 
+                  placeholder="Session ID" 
+                  value={sessionId} 
+                  onChange={(e) => {
+                    setError('');
+                    setSessionId(e.target.value);
+                  }}
+                  disabled={isJoining}
+                />
+                <Button 
+                  onClick={handleJoinSession}
+                  disabled={isJoining}
+                >
+                  {isJoining ? 'Joining...' : 'Join Session'}
+                </Button>
+              </InputGroup>
+              {error && <ErrorMessage>{error}</ErrorMessage>}
+            </ActionContainer>
+          </>
+        )}
       </MainContent>
     </PageContainer>
   );

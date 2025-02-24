@@ -10,13 +10,17 @@ import CreateQuizPage from './pages/CreateQuizPage';
 import LobbyPage from './pages/LobbyPage';
 import QuizRoomPage from './pages/QuizRoomPage';
 import LeaderboardPage from './pages/LeaderboardPage';
+import ProtectedRoute from './components/ProtectedRoute';
+import TokenExpirationAlert from './components/TokenExpirationAlert';
+import { getValidToken } from './utils/auth';
 
 function App() {
   const [theme, setTheme] = useState(allianceTheme);
   const [user, setUser] = useState(null);
+  const [isLoading, setIsLoading] = useState(true);
 
   useEffect(() => {
-    const token = localStorage.getItem('token');
+    const token = getValidToken();
     if (token) {
       axios
         .get('http://localhost:5000/api/users/me', {
@@ -26,25 +30,31 @@ function App() {
           setUser(res.data);
           setTheme(res.data.theme === 'Horde' ? hordeTheme : allianceTheme);
         })
-        .catch((err) => console.error(err));
+        .catch((err) => console.error(err))
+        .finally(() => setIsLoading(false));
+    } else {
+      setIsLoading(false);
     }
   }, []);
 
   const updateTheme = (newTheme) => {
     setTheme(newTheme === 'Horde' ? hordeTheme : allianceTheme);
-    axios
-      .put(
-        'http://localhost:5000/api/users/me/theme',
-        { theme: newTheme },
-        { headers: { Authorization: `Bearer ${localStorage.getItem('token')}` } }
-      )
-      .then(() => {
-        setUser(prev => ({
-          ...prev,
-          theme: newTheme
-        }));
-      })
-      .catch((err) => console.error(err));
+    const token = getValidToken();
+    if (token) {
+      axios
+        .put(
+          'http://localhost:5000/api/users/me/theme',
+          { theme: newTheme },
+          { headers: { Authorization: `Bearer ${token}` } }
+        )
+        .then(() => {
+          setUser(prev => ({
+            ...prev,
+            theme: newTheme
+          }));
+        })
+        .catch((err) => console.error(err));
+    }
   };
 
   return (
@@ -52,12 +62,48 @@ function App() {
       <Routes>
         <Route path="/" element={<LoginPage setUser={setUser} />} />
         <Route path="/register" element={<RegisterPage />} />
-        <Route path="/home" element={<HomePage user={user} updateTheme={updateTheme} />} />
-        <Route path="/lobby/:sessionId" element={<LobbyPage user={user} />} />
-        <Route path="/quiz/:sessionId" element={<QuizRoomPage user={user} />} />
-        <Route path="/create-quiz" element={<CreateQuizPage />} />
-        <Route path="/leaderboard" element={<LeaderboardPage />} />
+        <Route 
+          path="/home" 
+          element={
+            <ProtectedRoute>
+              <HomePage user={user} updateTheme={updateTheme} />
+            </ProtectedRoute>
+          } 
+        />
+        <Route 
+          path="/lobby/:sessionId" 
+          element={
+            <ProtectedRoute>
+              <LobbyPage user={user} />
+            </ProtectedRoute>
+          } 
+        />
+        <Route 
+          path="/quiz/:sessionId" 
+          element={
+            <ProtectedRoute>
+              <QuizRoomPage user={user} />
+            </ProtectedRoute>
+          } 
+        />
+        <Route 
+          path="/create-quiz" 
+          element={
+            <ProtectedRoute>
+              <CreateQuizPage />
+            </ProtectedRoute>
+          } 
+        />
+        <Route 
+          path="/leaderboard" 
+          element={
+            <ProtectedRoute>
+              <LeaderboardPage />
+            </ProtectedRoute>
+          } 
+        />
       </Routes>
+      <TokenExpirationAlert warningTime={5 * 60 * 1000} />
     </ThemeProvider>
   );
 }

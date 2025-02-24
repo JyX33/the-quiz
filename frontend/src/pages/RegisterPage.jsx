@@ -6,10 +6,10 @@ import {
   PageContainer,
   Title,
   Button,
-  Input,
   Card,
-  FormGroup,
 } from '../components/shared/StyledComponents';
+import FormInput from '../components/shared/FormInput';
+import { validateUsername, validatePassword, validatePasswordConfirmation } from '../utils/validation';
 
 const RegisterContainer = styled(PageContainer)`
   display: flex;
@@ -112,13 +112,21 @@ const RegisterPage = () => {
   };
 
   const validateForm = () => {
-    if (!username || !password) {
-      setError('Please fill in all fields');
+    const usernameValidation = validateUsername(username);
+    if (!usernameValidation.isValid) {
+      setError(usernameValidation.message);
       return false;
     }
 
-    if (password !== confirmPassword) {
-      setError('Passwords do not match');
+    const passwordValidation = validatePassword(password);
+    if (!passwordValidation.isValid) {
+      setError(passwordValidation.message);
+      return false;
+    }
+
+    const confirmValidation = validatePasswordConfirmation(password, confirmPassword);
+    if (!confirmValidation.isValid) {
+      setError(confirmValidation.message);
       return false;
     }
 
@@ -156,24 +164,28 @@ const RegisterPage = () => {
       <RegisterCard>
         <Title>Create Account</Title>
 
-        <FormGroup>
-          <Input
-            placeholder="Choose a username"
-            value={username}
-            onChange={(e) => setUsername(e.target.value)}
-            onKeyPress={handleKeyPress}
-            disabled={isLoading}
-          />
-        </FormGroup>
+        <FormInput
+          id="username"
+          label="Username"
+          value={username}
+          onChange={setUsername}
+          onKeyPress={handleKeyPress}
+          validator={validateUsername}
+          disabled={isLoading}
+          required
+        />
 
-        <FormGroup>
-          <Input
+        <div>
+          <FormInput
+            id="password"
+            label="Password"
             type="password"
-            placeholder="Choose a password"
             value={password}
-            onChange={(e) => setPassword(e.target.value)}
+            onChange={setPassword}
             onKeyPress={handleKeyPress}
+            validator={validatePassword}
             disabled={isLoading}
+            required
           />
           <PasswordStrengthMeter>
             <PasswordStrengthBar strength={getPasswordStrength()} />
@@ -185,18 +197,19 @@ const RegisterPage = () => {
               </Requirement>
             ))}
           </PasswordRequirements>
-        </FormGroup>
+        </div>
 
-        <FormGroup>
-          <Input
-            type="password"
-            placeholder="Confirm password"
-            value={confirmPassword}
-            onChange={(e) => setConfirmPassword(e.target.value)}
-            onKeyPress={handleKeyPress}
-            disabled={isLoading}
-          />
-        </FormGroup>
+        <FormInput
+          id="confirm-password"
+          label="Confirm Password"
+          type="password"
+          value={confirmPassword}
+          onChange={setConfirmPassword}
+          onKeyPress={handleKeyPress}
+          validator={(value) => validatePasswordConfirmation(password, value)}
+          disabled={isLoading}
+          required
+        />
 
         {error && <ErrorMessage>{error}</ErrorMessage>}
 

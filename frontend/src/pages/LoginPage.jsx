@@ -7,10 +7,11 @@ import {
   PageContainer,
   Title,
   Button,
-  Input,
   FormGroup,
   Card,
 } from '../components/shared/StyledComponents';
+import FormInput from '../components/shared/FormInput';
+import { validateUsername, validatePassword } from '../utils/validation';
 
 const LoginCard = styled(Card)`
   max-width: 400px;
@@ -51,11 +52,24 @@ const LoginPage = ({ setUser }) => {
   const [isLoading, setIsLoading] = useState(false);
   const navigate = useNavigate();
 
-  const handleLogin = async () => {
-    if (!username || !password) {
-      setError('Please enter both username and password');
-      return;
+  const validateForm = () => {
+    const usernameValidation = validateUsername(username);
+    if (!usernameValidation.isValid) {
+      setError(usernameValidation.message);
+      return false;
     }
+
+    const passwordValidation = validatePassword(password);
+    if (!passwordValidation.isValid) {
+      setError(passwordValidation.message);
+      return false;
+    }
+
+    return true;
+  };
+
+  const handleLogin = async () => {
+    if (!validateForm()) return;
 
     setError('');
     setIsLoading(true);
@@ -87,26 +101,28 @@ const LoginPage = ({ setUser }) => {
       <LoginCard>
         <Title>Welcome Back</Title>
         
-        <FormGroup>
-          <Input
-            placeholder="Username"
-            value={username}
-            onChange={(e) => setUsername(e.target.value)}
-            onKeyPress={handleKeyPress}
-            disabled={isLoading}
-          />
-        </FormGroup>
+        <FormInput
+          id="username"
+          label="Username"
+          value={username}
+          onChange={setUsername}
+          onKeyPress={handleKeyPress}
+          validator={validateUsername}
+          disabled={isLoading}
+          required
+        />
 
-        <FormGroup>
-          <Input
-            type="password"
-            placeholder="Password"
-            value={password}
-            onChange={(e) => setPassword(e.target.value)}
-            onKeyPress={handleKeyPress}
-            disabled={isLoading}
-          />
-        </FormGroup>
+        <FormInput
+          id="password"
+          label="Password"
+          type="password"
+          value={password}
+          onChange={setPassword}
+          onKeyPress={handleKeyPress}
+          validator={validatePassword}
+          disabled={isLoading}
+          required
+        />
 
         {error && <ErrorMessage>{error}</ErrorMessage>}
 
