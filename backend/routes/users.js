@@ -62,14 +62,33 @@ router.post('/login', (req, res) => {
           { expiresIn: '1h' }
         );
         
+        // Set token as HttpOnly cookie
+        res.cookie('token', token, {
+          httpOnly: true,
+          secure: process.env.NODE_ENV === 'production',
+          sameSite: 'strict',
+          maxAge: 3600000 // 1 hour in milliseconds
+        });
+        
         await logAction(user.id, 'login');
         logger.info('User logged in successfully:', { userId: user.id, username });
+        
+        // Still return token in response for backward compatibility
         res.json({ token });
       } catch (err) {
+        logger.error('Login error:', { error: err.message, username });
         res.status(500).json({ error: 'Login error' });
       }
     }
   );
+});
+
+// Logout user
+router.post('/logout', (req, res) => {
+  // Clear the auth cookie
+  res.clearCookie('token');
+  logger.info('User logged out');
+  res.json({ message: 'Logged out successfully' });
 });
 
 // Get current user profile

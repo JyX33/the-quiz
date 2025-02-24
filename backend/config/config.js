@@ -1,8 +1,8 @@
 const config = {
   port: process.env.PORT || 5000,
   dbPath: './database.db',
-  jwtSecret: 'your_jwt_secret', // TODO: Move to environment variable
-  corsOrigin: 'http://localhost:5173',
+  jwtSecret: process.env.JWT_SECRET || 'your_jwt_secret_default', // Use environment variable with fallback
+  corsOrigin: process.env.CORS_ORIGIN || 'http://localhost:5173',
   socketMethods: ['GET', 'POST'],
   
   // Logging configuration

@@ -1,15 +1,15 @@
-import { useEffect, useState } from 'react';
 import PropTypes from 'prop-types';
+import { useEffect, useState } from 'react';
 import { useParams } from 'react-router-dom';
 import styled, { keyframes } from 'styled-components';
-import socket from '../socket';
 import {
+  Button,
+  Card,
+  Input,
   PageContainer,
   Title,
-  Button,
-  Input,
-  Card,
 } from '../components/shared/StyledComponents';
+import socket from '../socket';
 
 const slideIn = keyframes`
   from {
@@ -55,14 +55,14 @@ const ScoreList = styled.div`
 `;
 
 const ScoreItem = styled.div`
-  background: ${({ theme, isCurrentUser }) => 
-    isCurrentUser ? `${theme.primary}22` : theme.background.paper};
+  background: ${({ theme, $isCurrentUser }) => 
+    $isCurrentUser ? `${theme.primary}22` : theme.background.paper};
   padding: ${({ theme }) => theme.spacing.md};
   border-radius: ${({ theme }) => theme.borderRadius};
   display: flex;
   justify-content: space-between;
   align-items: center;
-  animation: ${({ isUpdated }) => isUpdated ? pulse : 'none'} 0.3s ease-in-out;
+  animation: ${({ $isUpdated }) => $isUpdated ? pulse : 'none'} 0.3s ease-in-out;
 `;
 
 const TimerBar = styled.div`
@@ -71,7 +71,7 @@ const TimerBar = styled.div`
   position: absolute;
   bottom: 0;
   left: 0;
-  width: ${({ progress }) => progress}%;
+  width: ${({ $progress }) => $progress}%;
   transition: width 1s linear;
 `;
 
@@ -86,8 +86,8 @@ const ProgressDot = styled.div`
   width: 10px;
   height: 10px;
   border-radius: 50%;
-  background: ${({ theme, active }) => 
-    active ? theme.primary : theme.background.accent};
+  background: ${({ theme, $active }) => 
+    $active ? theme.primary : theme.background.accent};
   transition: background-color 0.3s ease;
 `;
 
@@ -102,13 +102,23 @@ const QuizRoomPage = ({ user }) => {
   const { sessionId } = useParams();
   const [currentQuestion, setCurrentQuestion] = useState(0);
   const [answer, setAnswer] = useState('');
-  const [scores, setScores] = useState({});
-  const [isCreator] = useState(false);
-  const [timeLeft, setTimeLeft] = useState(30);
+  const [scores, setScores] = useState({}); // {userId: {score, username}}
+  const [players, setPlayers] = useState({}); // {userId: username}
+  const [isCreator] = useState(user.id === sessionId); // Session creator's ID matches the sessionId
+  const [timeLeft, setTimeLeft] = useState(null); // null means question hasn't started
+  const [questionStarted, setQuestionStarted] = useState(false);
   const [totalQuestions] = useState(5); // This should come from your backend
   const [updatedScore, setUpdatedScore] = useState(null);
 
   useEffect(() => {
+    socket.on('playerJoined', (players) => {
+      const playerMap = players.reduce((acc, p) => {
+        acc[p.id] = p.username;
+        return acc;
+      }, {});
+      setPlayers(playerMap);
+    });
+
     socket.on('scoreUpdate', (newScores) => {
       setScores(newScores);
       setUpdatedScore(Object.keys(newScores).find(id => 
@@ -118,8 +128,9 @@ const QuizRoomPage = ({ user }) => {
 
     socket.on('nextQuestion', (index) => {
       setCurrentQuestion(index);
-      setTimeLeft(30);
+      setTimeLeft(null);
       setAnswer('');
+      setQuestionStarted(false);
     });
 
     socket.on('quizEnded', (finalScores) => {
@@ -129,6 +140,7 @@ const QuizRoomPage = ({ user }) => {
     });
 
     return () => {
+      socket.off('playerJoined');
       socket.off('scoreUpdate');
       socket.off('nextQuestion');
       socket.off('quizEnded');
@@ -136,19 +148,21 @@ const QuizRoomPage = ({ user }) => {
   }, [scores]);
 
   useEffect(() => {
-    if (timeLeft > 0) {
+    if (timeLeft !== null && timeLeft > 0) {
       const timer = setInterval(() => {
         setTimeLeft(prev => prev - 1);
       }, 1000);
       return () => clearInterval(timer);
     } else if (timeLeft === 0) {
-      submitAnswer(); // Auto-submit when time runs out
+      submitAnswer(true); // Auto-submit when time runs out
     }
   }, [timeLeft]);
 
-  const submitAnswer = () => {
-    if (!answer.trim()) return;
-    socket.emit('submitAnswer', { sessionId, answer });
+  const submitAnswer = (auto = false) => {
+    if (!auto && !answer.trim()) return;
+    // Send NO_RESPONSE if auto-submitting with no answer, otherwise send trimmed answer
+    const submission = (!answer.trim() && auto) ? "NO_RESPONSE" : answer.trim();
+    socket.emit('submitAnswer', { sessionId, answer: submission });
     setAnswer('');
   };
 
@@ -156,6 +170,12 @@ const QuizRoomPage = ({ user }) => {
     if (e.key === 'Enter') {
       submitAnswer();
     }
+  };
+
+  const startQuestion = () => {
+    socket.emit('startQuestion', { sessionId });
+    setQuestionStarted(true);
+    setTimeLeft(30);
   };
 
   const nextQuestion = () => {
@@ -166,13 +186,30 @@ const QuizRoomPage = ({ user }) => {
     socket.emit('endQuiz', { sessionId });
   };
 
+  useEffect(() => {
+    socket.on('questionStarted', () => {
+      setQuestionStarted(true);
+      setTimeLeft(30);
+    });
+
+    socket.on('playerLeft', () => {
+      // Re-fetch player list when someone leaves
+      socket.emit('joinSession', { sessionId });
+    });
+
+    return () => {
+      socket.off('questionStarted');
+      socket.off('playerLeft');
+    };
+  }, [sessionId]);
+
   return (
     <PageContainer>
       <Title>Quiz Room: {sessionId}</Title>
 
       <ProgressIndicator>
         {[...Array(totalQuestions)].map((_, index) => (
-          <ProgressDot key={index} active={index <= currentQuestion} />
+          <ProgressDot key={index} $active={index <= currentQuestion} />
         ))}
       </ProgressIndicator>
 
@@ -185,23 +222,35 @@ const QuizRoomPage = ({ user }) => {
           onChange={(e) => setAnswer(e.target.value)}
           onKeyPress={handleKeyPress}
         />
-        <TimerBar progress={(timeLeft / 30) * 100} />
+        <TimerBar $progress={(timeLeft / 30) * 100} />
       </QuestionCard>
 
       <ButtonGroup>
-        <Button onClick={submitAnswer} disabled={!answer.trim()}>
-          Submit Answer
-        </Button>
-        {isCreator && (
-          <>
-            <Button onClick={nextQuestion} $variant="secondary">
-              Next Question
+          {questionStarted ? (
+            <Button onClick={submitAnswer} disabled={!answer.trim()}>
+              Submit Answer
             </Button>
-            <Button onClick={endQuiz} $variant="secondary">
-              End Quiz
+          ) : (
+            <Button disabled>
+              Waiting for question to start...
             </Button>
-          </>
-        )}
+          )}
+          {isCreator && (
+            <>
+              {!questionStarted ? (
+                <Button onClick={startQuestion} $variant="secondary">
+                  Start Question
+                </Button>
+              ) : (
+                <Button onClick={nextQuestion} $variant="secondary">
+                  Next Question
+                </Button>
+              )}
+              <Button onClick={endQuiz} $variant="secondary">
+                End Quiz
+              </Button>
+            </>
+          )}
       </ButtonGroup>
 
       <ScoreBoard>
@@ -210,10 +259,14 @@ const QuizRoomPage = ({ user }) => {
           {Object.entries(scores).map(([userId, data]) => (
             <ScoreItem 
               key={userId}
-              isCurrentUser={userId === user.id}
-              isUpdated={userId === updatedScore}
+              $isCurrentUser={userId === user.id}
+              $isUpdated={userId === updatedScore}
             >
-              <span>{userId === user.id ? `${user.username} (You)` : userId}</span>
+              <span>
+                {userId === user.id 
+                  ? `${user.username} (You)` 
+                  : (players[userId] || "Unknown Player")}
+              </span>
               <strong>{data.score}</strong>
             </ScoreItem>
           ))}

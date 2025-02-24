@@ -3,7 +3,10 @@ import config from '../config/config.js';
 import { logger } from '../logger.js';
 
 const authenticateToken = (req, res, next) => {
-  const token = req.headers['authorization']?.split(' ')[1];
+  // Try to get token from cookie first, then fall back to Authorization header
+  const tokenFromCookie = req.cookies?.token;
+  const tokenFromHeader = req.headers['authorization']?.split(' ')[1];
+  const token = tokenFromCookie || tokenFromHeader;
   
   if (!token) {
     logger.warn('Authentication failed: No token provided', {
@@ -37,6 +40,7 @@ const authenticateToken = (req, res, next) => {
 };
 
 const authenticateSocket = (socket, next) => {
+  // Try to get token from cookies first (if available), then fall back to auth property
   const token = socket.handshake.auth.token;
   
   if (!token) {

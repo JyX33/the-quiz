@@ -3,9 +3,9 @@ import { logAction } from '../models/logger.js';
 import { authenticateSocket } from '../middleware/auth.js';
 import { logger } from '../logger.js';
 
-// In-memory session scores
+// In-memory session scores and question tracking
 const sessionScores = {};
-
+const sessionResponses = {}; // Track responses per question
 const lastHeartbeat = {};
 
 const setupSockets = (io) => {
@@ -142,11 +142,45 @@ const setupSockets = (io) => {
       );
     });
 
+    socket.on('startQuestion', ({ sessionId }) => {
+      db.get(
+        'SELECT * FROM quiz_sessions WHERE id = ? AND creator_id = ?',
+        [sessionId, socket.userId],
+        (err, session) => {
+          if (err || !session) {
+            logger.warn('Unauthorized question start attempt:', { 
+              sessionId, 
+              userId: socket.userId 
+            });
+            return socket.emit('error', 'Unauthorized or session not found');
+          }
+          
+          // Reset responses tracking for this question
+          if (!sessionResponses[sessionId]) {
+            sessionResponses[sessionId] = {};
+          }
+          sessionResponses[sessionId][session.current_question] = new Set();
+          
+          // Notify all players that question has started
+          io.to(sessionId).emit('questionStarted');
+          logger.info('Question started:', { 
+            sessionId, 
+            questionNumber: session.current_question 
+          });
+        }
+      );
+    });
+
     socket.on('submitAnswer', ({ sessionId, answer }) => {
       db.get('SELECT * FROM quiz_sessions WHERE id = ?', [sessionId], (err, session) => {
         if (err || !session) return;
         const quizId = session.quiz_id;
         const currentQuestion = session.current_question;
+
+        // Track that this player has responded
+        if (sessionResponses[sessionId]?.[currentQuestion]) {
+          sessionResponses[sessionId][currentQuestion].add(socket.userId);
+        }
 
         db.get('SELECT questions FROM quizzes WHERE id = ?', [quizId], (err, quiz) => {
           if (err || !quiz) return;
@@ -164,6 +198,22 @@ const setupSockets = (io) => {
           }
 
           io.to(sessionId).emit('scoreUpdate', sessionScores[sessionId]);
+
+          // Check if all players have responded
+          db.all(
+            'SELECT user_id FROM quiz_session_players WHERE session_id = ?',
+            [sessionId],
+            (err, players) => {
+              if (err) return;
+              const allPlayers = players.map(p => p.user_id);
+              const respondedPlayers = sessionResponses[sessionId][currentQuestion];
+              
+              if (respondedPlayers && allPlayers.every(id => respondedPlayers.has(id))) {
+                // All players have responded, notify the room
+                io.to(sessionId).emit('allPlayersResponded');
+              }
+            }
+          );
         });
       });
     });

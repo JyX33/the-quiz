@@ -1,3 +1,13 @@
+// Load environment variables from .env file
+if (process.env.NODE_ENV !== 'production') {
+  try {
+    const dotenv = await import('dotenv');
+    dotenv.config();
+  } catch (error) {
+    console.log('dotenv not available, using environment variables as is');
+  }
+}
+
 import express from 'express';
 import http from 'http';
 import cors from 'cors';
@@ -5,6 +15,15 @@ import { Server } from 'socket.io';
 import morgan from 'morgan';
 import config from './config/config.js';
 import { logger, stream } from './logger.js';
+
+// Try loading cookie-parser (it might not be installed yet)
+let cookieParser;
+try {
+  cookieParser = (await import('cookie-parser')).default;
+} catch (error) {
+  logger.warn('cookie-parser not available, cookie authentication will not work');
+  cookieParser = (req, res, next) => next(); // Fallback middleware that does nothing
+}
 
 // Import routes
 import userRoutes from './routes/users.js';
@@ -23,18 +42,24 @@ app.use(morgan(config.logging.morganFormat, { stream }));
 
 // Log startup
 logger.info('Server initialization started');
+logger.info(`Using JWT_SECRET from environment: ${process.env.JWT_SECRET ? 'Yes' : 'No, using default'}`);
 
 // Setup Socket.io
 const io = new Server(server, {
   cors: {
     origin: config.corsOrigin,
     methods: config.socketMethods,
+    credentials: true, // Allow cookies to be sent with requests
   },
 });
 
 // Middleware
-app.use(cors());
+app.use(cors({ 
+  origin: config.corsOrigin,
+  credentials: true, // Enable CORS with credentials
+}));
 app.use(express.json());
+app.use(cookieParser()); // Add cookie-parser middleware
 
 // Routes
 app.use('/api/users', userRoutes);
