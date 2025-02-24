@@ -194,10 +194,10 @@ const QuizRoomPage = ({ user }) => {
         </Button>
         {isCreator && (
           <>
-            <Button onClick={nextQuestion} variant="secondary">
+            <Button onClick={nextQuestion} $variant="secondary">
               Next Question
             </Button>
-            <Button onClick={endQuiz} variant="secondary">
+            <Button onClick={endQuiz} $variant="secondary">
               End Quiz
             </Button>
           </>

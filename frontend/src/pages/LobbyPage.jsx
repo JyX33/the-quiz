@@ -1,7 +1,7 @@
 import { useState, useEffect, useRef } from 'react';
 import PropTypes from 'prop-types';
 import { useParams, useNavigate } from 'react-router-dom';
-import styled, { keyframes } from 'styled-components';
+import styled, { keyframes, css } from 'styled-components';
 import socket from '../socket';
 import {
   PageContainer,
@@ -48,11 +48,11 @@ const PlayerCard = styled.div`
   align-items: center;
   gap: ${({ theme }) => theme.spacing.sm};
   animation: ${fadeIn} 0.3s ease-out;
-  border: 2px solid ${({ isHost, theme }) => 
-    isHost ? theme.primary : 'transparent'};
+  border: 2px solid ${({ $isHost, theme }) => 
+    $isHost ? theme.primary : 'transparent'};
   position: relative;
   
-  ${({ isNew }) => isNew && `
+  ${({ $isNew }) => $isNew && css`
     animation: ${pulse} 0.5s ease-out;
   `}
 `;
@@ -138,7 +138,7 @@ const StartButton = styled(Button)`
     position: absolute;
     top: 0;
     left: 0;
-    width: ${({ progress }) => progress}%;
+  width: ${({ $progress }) => $progress}%;
     height: 100%;
     background: ${({ theme }) => `${theme.background.accent}22`};
     transition: width 1s linear;
@@ -222,8 +222,8 @@ const LobbyPage = ({ user }) => {
             {players.map((playerId, index) => (
               <PlayerCard 
                 key={playerId}
-                isHost={index === 0}
-                isNew={index === players.length - 1}
+                $isHost={index === 0}
+                $isNew={index === players.length - 1}
               >
                 <Avatar>
                   {(playerId === user.id ? user.username : `P${index + 1}`).charAt(0)}
@@ -244,7 +244,7 @@ const LobbyPage = ({ user }) => {
             <StartButton 
               onClick={startQuiz}
               disabled={players.length < 2 || countdown !== null}
-              progress={startProgress}
+              $progress={startProgress}
             >
               {players.length < 2 
                 ? 'Waiting for more players...' 

@@ -37,8 +37,8 @@ export const Button = styled.button`
   position: relative;
   overflow: hidden;
   padding: ${({ theme }) => `${theme.spacing.sm} ${theme.spacing.lg}`};
-  background: ${({ theme, variant }) => 
-    variant === 'secondary' ? theme.secondary : theme.primary};
+  background: ${({ theme, $variant }) => 
+    $variant === 'secondary' ? theme.secondary : theme.primary};
   color: ${({ theme }) => theme.text.primary};
   border: none;
   border-radius: ${({ theme }) => theme.borderRadius};
@@ -47,15 +47,15 @@ export const Button = styled.button`
   transition: ${({ theme }) => theme.animation.buttonHover};
   
   &:hover {
-    background: ${({ theme, variant }) => 
-      variant === 'secondary' ? theme.secondary : theme.button.hoverBg};
+    background: ${({ theme, $variant }) => 
+      $variant === 'secondary' ? theme.secondary : theme.button.hoverBg};
     transform: translateY(-1px);
     box-shadow: ${({ theme }) => theme.boxShadow};
   }
   
   &:active {
-    background: ${({ theme, variant }) => 
-      variant === 'secondary' ? theme.secondary : theme.button.activeBg};
+    background: ${({ theme, $variant }) => 
+      $variant === 'secondary' ? theme.secondary : theme.button.activeBg};
     transform: translateY(0);
   }
   

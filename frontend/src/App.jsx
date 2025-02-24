@@ -6,6 +6,7 @@ import { allianceTheme, hordeTheme } from './styles/themes';
 import LoginPage from './pages/LoginPage';
 import RegisterPage from './pages/RegisterPage';
 import HomePage from './pages/HomePage';
+import CreateQuizPage from './pages/CreateQuizPage';
 import LobbyPage from './pages/LobbyPage';
 import QuizRoomPage from './pages/QuizRoomPage';
 import LeaderboardPage from './pages/LeaderboardPage';
@@ -37,7 +38,12 @@ function App() {
         { theme: newTheme },
         { headers: { Authorization: `Bearer ${localStorage.getItem('token')}` } }
       )
-      .then(() => console.log('Theme updated'))
+      .then(() => {
+        setUser(prev => ({
+          ...prev,
+          theme: newTheme
+        }));
+      })
       .catch((err) => console.error(err));
   };
 
@@ -49,6 +55,7 @@ function App() {
         <Route path="/home" element={<HomePage user={user} updateTheme={updateTheme} />} />
         <Route path="/lobby/:sessionId" element={<LobbyPage user={user} />} />
         <Route path="/quiz/:sessionId" element={<QuizRoomPage user={user} />} />
+        <Route path="/create-quiz" element={<CreateQuizPage />} />
         <Route path="/leaderboard" element={<LeaderboardPage />} />
       </Routes>
     </ThemeProvider>

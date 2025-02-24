@@ -120,7 +120,7 @@ const LoginPage = ({ setUser }) => {
           </Button>
           <Button 
             onClick={() => navigate('/register')} 
-            variant="secondary"
+            $variant="secondary"
             disabled={isLoading}
             style={{ flex: 1 }}
           >

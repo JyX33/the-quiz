@@ -1,149 +1,116 @@
-import { useState, useEffect } from 'react';
+import { useState } from 'react';
 import PropTypes from 'prop-types';
 import { useNavigate } from 'react-router-dom';
 import axios from 'axios';
+import styled from 'styled-components';
 import {
   PageContainer,
-  Title,
-  Subtitle,
   Button,
   Input,
   Select,
-  QuestionContainer,
-  QuizList,
-  QuizItem,
-  FormGroup,
 } from '../components/shared/StyledComponents';
 
+const TopBar = styled.div`
+  position: absolute;
+  top: ${({ theme }) => theme.spacing.md};
+  right: ${({ theme }) => theme.spacing.md};
+  display: flex;
+  align-items: center;
+  gap: ${({ theme }) => theme.spacing.md};
+`;
+
+const ThemeSelect = styled(Select)`
+  width: 200px;
+`;
+
+const MainContent = styled.div`
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  min-height: 80vh;
+  gap: ${({ theme }) => theme.spacing.lg};
+`;
+
+const ActionContainer = styled.div`
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: ${({ theme }) => theme.spacing.md};
+  margin: ${({ theme }) => theme.spacing.md} 0;
+`;
+
+const InputGroup = styled.div`
+  display: flex;
+  align-items: center;
+  gap: ${({ theme }) => theme.spacing.md};
+`;
+
+const ErrorMessage = styled.div`
+  color: ${({ theme }) => theme.error || '#ff0000'};
+  font-size: 0.9rem;
+  margin-top: ${({ theme }) => theme.spacing.xs};
+`;
+
 const HomePage = ({ user, updateTheme }) => {
-  const [quizzes, setQuizzes] = useState([]);
-  const [questions, setQuestions] = useState([{ question: '', options: ['', '', '', ''], correctAnswer: '' }]);
-  const [category, setCategory] = useState('');
-  const [difficulty, setDifficulty] = useState('');
   const [sessionId, setSessionId] = useState('');
+  const [error, setError] = useState('');
   const navigate = useNavigate();
 
-  useEffect(() => {
-    axios
-      .get('http://localhost:5000/api/quizzes', {
-        headers: { Authorization: `Bearer ${localStorage.getItem('token')}` },
-      })
-      .then((res) => setQuizzes(res.data))
-      .catch((err) => console.error(err));
-  }, []);
-
-  const addQuestion = () => {
-    setQuestions([...questions, { question: '', options: ['', '', '', ''], correctAnswer: '' }]);
-  };
-
-  const updateQuestion = (index, field, value, optionIndex = null) => {
-    const newQuestions = [...questions];
-    if (field === 'options') {
-      newQuestions[index].options[optionIndex] = value;
-    } else {
-      newQuestions[index][field] = value;
+  const handleJoinSession = async () => {
+    try {
+      setError('');
+      const response = await axios.get(`http://localhost:5000/api/sessions/${sessionId}`, {
+        headers: { Authorization: `Bearer ${localStorage.getItem('token')}` }
+      });
+      if (response.data) {
+        navigate(`/lobby/${sessionId}`);
+      }
+    } catch (err) {
+      if (err.response?.status === 404) {
+        setError('Session not found. Please check the session ID.');
+      } else {
+        setError('Error joining session. Please try again.');
+      }
     }
-    setQuestions(newQuestions);
-  };
-
-  const createQuiz = () => {
-    axios
-      .post(
-        'http://localhost:5000/api/quizzes',
-        { questions, category, difficulty },
-        { headers: { Authorization: `Bearer ${localStorage.getItem('token')}` } }
-      )
-      .then((res) => {
-        axios
-          .post(
-            'http://localhost:5000/api/sessions',
-            { quizId: res.data.quizId },
-            { headers: { Authorization: `Bearer ${localStorage.getItem('token')}` } }
-          )
-          .then((sessionRes) => navigate(`/lobby/${sessionRes.data.sessionId}`));
-      })
-      .catch((err) => console.error(err));
-  };
-
-  const joinSession = () => {
-    navigate(`/lobby/${sessionId}`);
   };
 
   return (
     <PageContainer>
-      <Title>Welcome, {user?.username}</Title>
-      
-      <FormGroup>
-        <Select onChange={(e) => updateTheme(e.target.value)} value={user?.theme || 'Alliance'}>
+      <TopBar>
+        <ThemeSelect onChange={(e) => updateTheme(e.target.value)} value={user?.theme || 'Alliance'}>
           <option value="Alliance">Alliance Theme</option>
           <option value="Horde">Horde Theme</option>
-        </Select>
-      </FormGroup>
-
-      <Subtitle>Create Quiz</Subtitle>
-      {questions.map((q, index) => (
-        <QuestionContainer key={index}>
-          <FormGroup>
-            <Input
-              placeholder="Question"
-              value={q.question}
-              onChange={(e) => updateQuestion(index, 'question', e.target.value)}
-            />
-          </FormGroup>
-          {q.options.map((opt, i) => (
-            <FormGroup key={i}>
-              <Input
-                placeholder={`Option ${i + 1}`}
-                value={opt}
-                onChange={(e) => updateQuestion(index, 'options', e.target.value, i)}
-              />
-            </FormGroup>
-          ))}
-          <FormGroup>
-            <Input
-              placeholder="Correct Answer"
-              value={q.correctAnswer}
-              onChange={(e) => updateQuestion(index, 'correctAnswer', e.target.value)}
-            />
-          </FormGroup>
-        </QuestionContainer>
-      ))}
-      <FormGroup>
-        <Button onClick={addQuestion} variant="secondary">Add Question</Button>
-      </FormGroup>
-
-      <FormGroup>
-        <Input placeholder="Category" value={category} onChange={(e) => setCategory(e.target.value)} />
-      </FormGroup>
-      <FormGroup>
-        <Input placeholder="Difficulty" value={difficulty} onChange={(e) => setDifficulty(e.target.value)} />
-      </FormGroup>
-      <FormGroup>
-        <Button onClick={createQuiz}>Create Quiz</Button>
-      </FormGroup>
-
-      <Subtitle>Join Session</Subtitle>
-      <FormGroup>
-        <Input placeholder="Session ID" value={sessionId} onChange={(e) => setSessionId(e.target.value)} />
-        <Button onClick={joinSession}>Join Session</Button>
-      </FormGroup>
-
-      <Subtitle>Your Quizzes</Subtitle>
-      <QuizList>
-        {quizzes.map((quiz) => (
-          <QuizItem key={quiz.id}>
-            <h3>{quiz.category || 'No Category'}</h3>
-            <p>Difficulty: {quiz.difficulty || 'Not specified'}</p>
-            <p>Questions: {quiz.questions?.length || 0}</p>
-          </QuizItem>
-        ))}
-      </QuizList>
-      
-      <FormGroup>
-        <Button onClick={() => navigate('/leaderboard')} variant="secondary">
-          View Leaderboard
+        </ThemeSelect>
+        <Button 
+          onClick={() => {
+            localStorage.removeItem('token');
+            navigate('/');
+          }}
+          $variant="secondary"
+        >
+          Logout
         </Button>
-      </FormGroup>
+      </TopBar>
+
+      <MainContent>
+        <Button onClick={() => navigate('/create-quiz')}>Create Quiz</Button>
+        
+        <ActionContainer>
+          <InputGroup>
+            <Input 
+              placeholder="Session ID" 
+              value={sessionId} 
+              onChange={(e) => {
+                setError('');
+                setSessionId(e.target.value);
+              }}
+            />
+            <Button onClick={handleJoinSession}>Join Session</Button>
+          </InputGroup>
+          {error && <ErrorMessage>{error}</ErrorMessage>}
+        </ActionContainer>
+      </MainContent>
     </PageContainer>
   );
 };
