@@ -1,8 +1,9 @@
-import { useState, useEffect } from 'react';
+import axios from 'axios';
+import PropTypes from 'prop-types';
+import { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import styled from 'styled-components';
-import PropTypes from 'prop-types';
-import { isTokenExpired, removeToken } from '../utils/auth';
+import { removeToken } from '../utils/auth';
 
 const AlertContainer = styled.div`
   position: fixed;
@@ -98,8 +99,13 @@ const TokenExpirationAlert = ({ warningTime = 5 * 60 * 1000 }) => {
   }, [navigate, showAlert, timeLeft, warningTime]);
 
   const handleStayLoggedIn = async () => {
-    // TODO: Implement token refresh logic here
-    setShowAlert(false);
+    try {
+      await axios.post('http://localhost:5000/api/users/refresh-token');
+      setShowAlert(false);
+    } catch (error) {
+      console.error('Error refreshing token:', error);
+      handleLogout(); // If refresh fails, log out
+    }
   };
 
   const handleLogout = () => {

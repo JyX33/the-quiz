@@ -1,6 +1,7 @@
 /**
  * Auth utility functions for token handling and validation
  */
+import axios from 'axios';
 
 /**
  * Decodes and checks if a JWT token is expired
@@ -21,21 +22,17 @@ export const isTokenExpired = (token) => {
   }
 };
 
-/**
- * Gets the current token and validates it
- * @returns {string|null} Valid token or null if no valid token exists
- */
+// Update to work with cookies instead of localStorage
 export const getValidToken = () => {
-  const token = localStorage.getItem('token');
-  if (token && !isTokenExpired(token)) {
-    return token;
-  }
-  return null;
+  // With HttpOnly cookies, we can't access the token directly
+  // Instead, we'll use a separate endpoint to check authentication
+  return true; // Just return true, the cookie will be sent automatically
 };
 
 /**
  * Removes the current token from storage
  */
 export const removeToken = () => {
-  localStorage.removeItem('token');
+  // Call logout endpoint to clear the cookie
+  return axios.post('/api/users/logout');
 };

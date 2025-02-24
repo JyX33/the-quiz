@@ -8,6 +8,22 @@ if (process.env.NODE_ENV !== 'production') {
   }
 }
 
+import csrf from 'csurf';
+
+// Setup CSRF middleware with cookies
+const csrfProtection = csrf({ cookie: true });
+
+// Apply to state-changing routes
+app.use('/api/users/login', csrfProtection);
+app.use('/api/users/register', csrfProtection);
+app.use('/api/quizzes', csrfProtection);
+app.use('/api/sessions', csrfProtection);
+
+// Add route to get CSRF token
+app.get('/api/csrf-token', csrfProtection, (req, res) => {
+  res.json({ csrfToken: req.csrfToken() });
+});
+
 import express from 'express';
 import http from 'http';
 import cors from 'cors';

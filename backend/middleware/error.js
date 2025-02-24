@@ -14,27 +14,26 @@ export class AppError extends Error {
 
 // Error handler middleware
 export const errorHandler = (err, req, res, next) => {
-  // Default status code and error message
-  let statusCode = err.statusCode || 500;
-  let errorMessage = err.message || 'Something went wrong';
-  let errorCode = err.errorCode || null;
-  
-  // Determine if this is a known operational error or an unexpected error
-  const isOperational = err.isOperational || false;
+  // Convert all errors to AppError format
+  const appError = err.isOperational 
+    ? err 
+    : new AppError(
+        err.message || 'Something went wrong',
+        err.status || 500,
+        err.code || 'SERVER_ERROR'
+      );
   
   // Log error based on whether it's operational or not
-  if (isOperational) {
-    // Expected error - log as warning
-    logger.warn(`${statusCode} - ${errorMessage}`, {
+  if (appError.isOperational) {
+    logger.warn(`${appError.statusCode} - ${appError.message}`, {
       path: req.path,
       method: req.method,
       ip: req.ip,
-      errorCode,
+      errorCode: appError.errorCode,
       userId: req.user?.id
     });
   } else {
-    // Unexpected error - log as error with stack trace
-    logger.error(`${statusCode} - ${errorMessage}`, {
+    logger.error(`${appError.statusCode} - ${appError.message}`, {
       path: req.path,
       method: req.method,
       ip: req.ip,
@@ -44,12 +43,12 @@ export const errorHandler = (err, req, res, next) => {
   }
   
   // Send standardized error response
-  res.status(statusCode).json({
+  res.status(appError.statusCode).json({
     status: 'error',
-    statusCode,
-    message: errorMessage,
-    ...(errorCode && { code: errorCode }), // Include errorCode only if it exists
-    ...(process.env.NODE_ENV === 'development' && { stack: err.stack }) // Include stack trace in development
+    statusCode: appError.statusCode,
+    message: appError.message,
+    code: appError.errorCode,
+    ...(process.env.NODE_ENV === 'development' && { stack: err.stack })
   });
 };
 

@@ -170,16 +170,20 @@ const runTransaction = async (operations) => {
 };
 
 // Convert the runTransaction function to use async/await pattern
-const runTransactionAsync = async (operationsAsync) => {
+const runTransactionAsync = async (operations) => {
   await db.runAsync('BEGIN TRANSACTION');
   
   try {
-    const results = await operationsAsync();
+    const results = await operations();
     await db.runAsync('COMMIT');
+    logger.debug('Transaction committed successfully');
     return results;
   } catch (error) {
-    logger.error('Transaction error:', { error: error.message, stack: error.stack });
     await db.runAsync('ROLLBACK');
+    logger.error('Transaction rolled back due to error:', {
+      error: error.message,
+      stack: error.stack
+    });
     throw error;
   }
 };

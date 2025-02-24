@@ -123,8 +123,11 @@ router.post('/login', asyncHandler(async (req, res, next) => {
     await logAction(user.id, 'login');
     logger.info('User logged in successfully:', { userId: user.id, username });
     
-    // Still return token in response for backward compatibility
-    res.json({ token });
+    // Return user data but NOT the token in response body
+    res.json({ 
+      success: true, 
+      user: { id: user.id, username: user.username } 
+    });
   } catch (error) {
     // Login succeeded but logging failed, continue anyway
     logger.error('Failed to log login action:', {
@@ -165,6 +168,44 @@ router.get('/me', authenticateToken, asyncHandler(async (req, res, next) => {
   logger.info('User profile retrieved:', { userId: req.user.id });
   res.json(user);
 }));
+
+router.post('/refresh-token', (req, res) => {
+  const token = req.cookies.token;
+  
+  if (!token) {
+    return res.status(401).json({ message: 'No token provided' });
+  }
+  
+  try {
+    const decoded = jwt.verify(token, config.jwtSecret, { ignoreExpiration: true });
+    
+    // Check if token is close to expiration (within 5 minutes)
+    const now = Math.floor(Date.now() / 1000);
+    if (decoded.exp - now > 300) {
+      // Token still has more than 5 minutes, return success
+      return res.json({ success: true });
+    }
+    
+    // Generate new token
+    const newToken = jwt.sign(
+      { id: decoded.id, username: decoded.username },
+      config.jwtSecret,
+      { expiresIn: '1h' }
+    );
+    
+    // Set new token as cookie
+    res.cookie('token', newToken, {
+      httpOnly: true,
+      secure: process.env.NODE_ENV === 'production',
+      sameSite: 'strict',
+      maxAge: 3600000 // 1 hour
+    });
+    
+    res.json({ success: true });
+  } catch (error) {
+    res.status(401).json({ message: 'Invalid token' });
+  }
+});
 
 // Update user theme
 router.put('/me/theme', authenticateToken, asyncHandler(async (req, res, next) => {
