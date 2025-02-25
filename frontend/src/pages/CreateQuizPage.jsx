@@ -1,8 +1,9 @@
-import api from '../utils/axios';
-import { useState } from 'react';
+import api, { refreshCsrfToken } from '../utils/axios';
+import { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import styled from 'styled-components';
 import FormInput from '../components/shared/FormInput';
+import Form from '../components/shared/Form';
 import {
   Button,
   FormGroup,
@@ -10,20 +11,9 @@ import {
   QuestionContainer,
   Title,
 } from '../components/shared/StyledComponents';
-import { checkAuthentication } from '../utils/auth';
 import { handleApiError } from '../utils/errorHandler';
 import { validateOptions, validateQuestion, validateQuizTitle } from '../utils/validation';
 import LoadingButton from '../components/shared/LoadingButton';
-
-const ErrorMessage = styled.div`
-  color: ${({ theme }) => theme.error};
-  background: ${({ theme }) => `${theme.error}11`};
-  padding: ${({ theme }) => theme.spacing.sm};
-  border-radius: ${({ theme }) => theme.borderRadius};
-  font-size: 0.9rem;
-  text-align: center;
-  margin-bottom: ${({ theme }) => theme.spacing.md};
-`;
 
 const QuizCreationContainer = styled(PageContainer)`
   max-width: 800px;
@@ -31,14 +21,36 @@ const QuizCreationContainer = styled(PageContainer)`
   padding: ${({ theme }) => theme.spacing.lg};
 `;
 
+const RecoveryOptions = styled.div`
+  display: flex;
+  gap: ${({ theme }) => theme.spacing.md};
+  margin-top: ${({ theme }) => theme.spacing.md};
+`;
+
+/**
+ * CreateQuizPage component with improved transaction handling
+ * - Ensures both quiz creation and session creation succeed or both fail
+ * - Provides recovery options if one part of the transaction fails
+ * - Uses consistent form submission patterns
+ */
 const CreateQuizPage = () => {
   const [questions, setQuestions] = useState([{ question: '', options: ['', '', '', ''], correctAnswer: '' }]);
   const [title, setTitle] = useState('');
   const [category, setCategory] = useState('');
   const [difficulty, setDifficulty] = useState('');
   const [error, setError] = useState('');
+  const [success, setSuccess] = useState('');
+  const [warning, setWarning] = useState('');
   const [isLoading, setIsLoading] = useState(false);
+  const [createdQuizId, setCreatedQuizId] = useState(null);
+  const [sessionCreationFailed, setSessionCreationFailed] = useState(false);
+  
   const navigate = useNavigate();
+
+  // Automatically refresh CSRF token on component load
+  useEffect(() => {
+    refreshCsrfToken();
+  }, []);
 
   const addQuestion = () => {
     setQuestions([...questions, { question: '', options: ['', '', '', ''], correctAnswer: '' }]);
@@ -58,19 +70,16 @@ const CreateQuizPage = () => {
     // Validate title
     const titleValidation = validateQuizTitle(title);
     if (!titleValidation.isValid) {
-      setError(titleValidation.message);
-      return false;
+      return { valid: false, error: titleValidation.message };
     }
 
     // Validate category and difficulty
     if (!category.trim()) {
-      setError('Category is required');
-      return false;
+      return { valid: false, error: 'Category is required' };
     }
 
     if (!difficulty.trim()) {
-      setError('Difficulty is required');
-      return false;
+      return { valid: false, error: 'Difficulty is required' };
     }
 
     // Validate questions
@@ -80,145 +89,245 @@ const CreateQuizPage = () => {
       // Validate question text
       const questionValidation = validateQuestion(q.question);
       if (!questionValidation.isValid) {
-        setError(`Question ${i+1}: ${questionValidation.message}`);
-        return false;
+        return { valid: false, error: `Question ${i+1}: ${questionValidation.message}` };
       }
       
       // Validate options
       const optionsValidation = validateOptions(q.options);
       if (!optionsValidation.isValid) {
-        setError(`Question ${i+1}: ${optionsValidation.message}`);
-        return false;
+        return { valid: false, error: `Question ${i+1}: ${optionsValidation.message}` };
       }
       
       // Validate correct answer
       if (!q.correctAnswer.trim()) {
-        setError(`Question ${i+1}: Please specify the correct answer`);
-        return false;
+        return { valid: false, error: `Question ${i+1}: Please specify the correct answer` };
       }
       
       // Check that correct answer matches one of the options
       if (!q.options.includes(q.correctAnswer)) {
-        setError(`Question ${i+1}: Correct answer must match one of the options`);
-        return false;
+        return { valid: false, error: `Question ${i+1}: Correct answer must match one of the options` };
       }
     }
     
-    return true;
+    return { valid: true };
   };
 
-  const createQuiz = async () => {
-    if (!validateForm()) return;
+  /**
+   * Handle creation of quiz and session as a transaction
+   */
+  const handleCreateQuiz = async () => {
+    const validation = validateForm();
+    if (!validation.valid) {
+      setError(validation.error);
+      return;
+    }
     
     setIsLoading(true);
     setError('');
+    setSuccess('');
+    setWarning('');
+    setCreatedQuizId(null);
+    setSessionCreationFailed(false);
     
     try {
-      // Verify authentication status
-      const isAuthenticated = await checkAuthentication();
-      if (!isAuthenticated) {
-        navigate('/');
-        return;
-      }
-
-      const res = await api.post(
+      // Make sure we have a fresh CSRF token
+      await refreshCsrfToken();
+      
+      // Step 1: Create quiz
+      const quizResponse = await api.post(
         '/quizzes',
         { title, questions, category, difficulty }
       );
       
-      const sessionRes = await api.post(
+      const quizId = quizResponse.data.quizId;
+      setCreatedQuizId(quizId);
+      
+      try {
+        // Step 2: Create session
+        const sessionResponse = await api.post(
+          '/sessions',
+          { quizId }
+        );
+        
+        // Success - both operations completed
+        setSuccess('Quiz and session created successfully!');
+        
+        // Delay navigation slightly to show success message
+        setTimeout(() => {
+          navigate(`/lobby/${sessionResponse.data.sessionId}`);
+        }, 1000);
+      } catch (sessionError) {
+        // First part succeeded but second failed
+        setSessionCreationFailed(true);
+        setWarning(
+          'Quiz was created successfully, but we encountered an issue creating the session. ' +
+          'You can try to create a session again or manage your quiz later.'
+        );
+        console.error('Session creation error:', sessionError);
+      }
+    } catch (error) {
+      handleApiError(error, setError);
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  /**
+   * Retry creating a session for an existing quiz
+   */
+  const handleRetryCreateSession = async () => {
+    if (!createdQuizId) return;
+    
+    setIsLoading(true);
+    setError('');
+    setWarning('');
+    
+    try {
+      // Fresh CSRF token
+      await refreshCsrfToken();
+      
+      // Try to create session again
+      const sessionResponse = await api.post(
         '/sessions',
-        { quizId: res.data.quizId }
+        { quizId: createdQuizId }
       );
       
-      navigate(`/lobby/${sessionRes.data.sessionId}`);
+      setSuccess('Session created successfully!');
+      
+      // Navigate to lobby
+      setTimeout(() => {
+        navigate(`/lobby/${sessionResponse.data.sessionId}`);
+      }, 1000);
     } catch (error) {
-      handleApiError(error, setError, setIsLoading);
+      handleApiError(error, setError);
+    } finally {
+      setIsLoading(false);
     }
+  };
+
+  /**
+   * Allow the user to go to the home page after quiz creation
+   */
+  const handleGoHome = () => {
+    navigate('/home');
   };
 
   return (
     <QuizCreationContainer>
       <Title>Create New Quiz</Title>
       
-      <FormInput
-        id="quiz-title"
-        label="Quiz Title"
-        value={title}
-        onChange={setTitle}
-        validator={validateQuizTitle}
-        placeholder="Enter a title for your quiz"
-        required
-      />
+      <Form 
+        onSubmit={handleCreateQuiz}
+        error={error}
+        warning={warning}
+        success={success}
+      >
+        <FormInput
+          id="quiz-title"
+          label="Quiz Title"
+          value={title}
+          onChange={setTitle}
+          validator={validateQuizTitle}
+          placeholder="Enter a title for your quiz"
+          required
+        />
 
-      {questions.map((q, index) => (
-        <QuestionContainer key={index}>
-          <h3>Question {index + 1}</h3>
-          
-          <FormInput
-            id={`question-${index}`}
-            label="Question Text"
-            value={q.question}
-            onChange={(value) => updateQuestion(index, 'question', value)}
-            validator={validateQuestion}
-            placeholder="Enter your question"
-            required
-          />
-          
-          {q.options.map((opt, i) => (
+        {questions.map((q, index) => (
+          <QuestionContainer key={index}>
+            <h3>Question {index + 1}</h3>
+            
             <FormInput
-              key={i}
-              id={`question-${index}-option-${i}`}
-              label={`Option ${i + 1}`}
-              value={opt}
-              onChange={(value) => updateQuestion(index, 'options', value, i)}
-              placeholder={`Enter option ${i + 1}`}
+              id={`question-${index}`}
+              label="Question Text"
+              value={q.question}
+              onChange={(value) => updateQuestion(index, 'question', value)}
+              validator={validateQuestion}
+              placeholder="Enter your question"
               required
             />
-          ))}
-          
-          <FormInput
-            id={`question-${index}-answer`}
-            label="Correct Answer"
-            value={q.correctAnswer}
-            onChange={(value) => updateQuestion(index, 'correctAnswer', value)}
-            placeholder="Enter the correct answer (must match one of the options)"
-            required
-          />
-        </QuestionContainer>
-      ))}
-      
-      <FormGroup>
-        <Button onClick={addQuestion} $variant="secondary" disabled={isLoading}>
-          Add Question
-        </Button>
-      </FormGroup>
+            
+            {q.options.map((opt, i) => (
+              <FormInput
+                key={i}
+                id={`question-${index}-option-${i}`}
+                label={`Option ${i + 1}`}
+                value={opt}
+                onChange={(value) => updateQuestion(index, 'options', value, i)}
+                placeholder={`Enter option ${i + 1}`}
+                required
+              />
+            ))}
+            
+            <FormInput
+              id={`question-${index}-answer`}
+              label="Correct Answer"
+              value={q.correctAnswer}
+              onChange={(value) => updateQuestion(index, 'correctAnswer', value)}
+              placeholder="Enter the correct answer (must match one of the options)"
+              required
+            />
+          </QuestionContainer>
+        ))}
+        
+        <FormGroup>
+          <Button 
+            type="button" 
+            onClick={addQuestion} 
+            $variant="secondary" 
+            disabled={isLoading}
+          >
+            Add Question
+          </Button>
+        </FormGroup>
 
-      <FormInput
-        id="category"
-        label="Category"
-        value={category}
-        onChange={setCategory}
-        placeholder="E.g., Science, History, Sports"
-        required
-      />
-      
-      <FormInput
-        id="difficulty"
-        label="Difficulty"
-        value={difficulty}
-        onChange={setDifficulty}
-        placeholder="E.g., Easy, Medium, Hard"
-        required
-      />
-      
-      {error && <ErrorMessage>{error}</ErrorMessage>}
-      
-      <FormGroup>
-        <LoadingButton onClick={createQuiz} disabled={isLoading}>
-          {isLoading ? 'Creating...' : 'Create Quiz'}
-        </LoadingButton>
-      </FormGroup>
+        <FormInput
+          id="category"
+          label="Category"
+          value={category}
+          onChange={setCategory}
+          placeholder="E.g., Science, History, Sports"
+          required
+        />
+        
+        <FormInput
+          id="difficulty"
+          label="Difficulty"
+          value={difficulty}
+          onChange={setDifficulty}
+          placeholder="E.g., Easy, Medium, Hard"
+          required
+        />
+        
+        {sessionCreationFailed ? (
+          <RecoveryOptions>
+            <LoadingButton 
+              type="button"
+              onClick={handleRetryCreateSession} 
+              disabled={isLoading}
+            >
+              {isLoading ? 'Retrying...' : 'Retry Creating Session'}
+            </LoadingButton>
+            <Button 
+              type="button"
+              onClick={handleGoHome}
+              $variant="secondary"
+              disabled={isLoading}
+            >
+              Go To Home
+            </Button>
+          </RecoveryOptions>
+        ) : (
+          <FormGroup>
+            <LoadingButton 
+              type="submit"
+              isLoading={isLoading}
+              loadingText="Creating..."
+            >
+              Create Quiz
+            </LoadingButton>
+          </FormGroup>
+        )}
+      </Form>
     </QuizCreationContainer>
   );
 };

@@ -1,7 +1,7 @@
 import { useState, useEffect, useRef } from 'react';
-import PropTypes from 'prop-types';
 import { useParams, useNavigate } from 'react-router-dom';
 import styled, { keyframes, css } from 'styled-components';
+import Form from '../components/shared/Form';
 import socket from '../socket';
 import {
   PageContainer,
@@ -10,6 +10,7 @@ import {
   Input,
   Card,
 } from '../components/shared/StyledComponents';
+import { useAuth } from '../contexts/AuthContext';
 
 const pulse = keyframes`
   0% { transform: scale(1); }
@@ -145,30 +146,40 @@ const StartButton = styled(Button)`
   }
 `;
 
-const LobbyPage = ({ user }) => {
+const LobbyPage = () => {
   const { sessionId } = useParams();
   const [players, setPlayers] = useState([]); // Now stores {id, username} objects
   const [messages, setMessages] = useState([]);
   const [messageInput, setMessageInput] = useState('');
   const [countdown, setCountdown] = useState(null);
   const [startProgress, setStartProgress] = useState(0);
+  const [error, setError] = useState('');
+  
   const chatRef = useRef(null);
   const navigate = useNavigate();
+  const { user } = useAuth();
 
   useEffect(() => {
+    if (!user || !sessionId) return;
+    
     socket.emit('joinSession', { sessionId });
+    
     socket.on('playerJoined', (players) => {
       setPlayers(players);
       addMessage('System', `${players[players.length - 1].username} has joined the lobby`);
     });
+    
     socket.on('playerLeft', (players) => {
       setPlayers(players);
       addMessage('System', `A player has left the lobby`);
     });
+    
     socket.on('chatMessage', ({ username, message }) => {
       addMessage(username, message);
     });
+    
     socket.on('quizStarting', (count) => setCountdown(count));
+    
     socket.on('quizStarted', () => navigate(`/quiz/${sessionId}`));
 
     return () => {
@@ -178,7 +189,7 @@ const LobbyPage = ({ user }) => {
       socket.off('quizStarting');
       socket.off('quizStarted');
     };
-  }, [sessionId, navigate]);
+  }, [sessionId, navigate, user]);
 
   useEffect(() => {
     if (chatRef.current) {
@@ -190,10 +201,13 @@ const LobbyPage = ({ user }) => {
     setMessages(prev => [...prev, { username, message, time: new Date() }]);
   };
 
-  const sendMessage = (e) => {
-    e.preventDefault();
-    if (!messageInput.trim()) return;
+  const sendMessage = () => {
+    if (!messageInput.trim()) {
+      setError('Please enter a message');
+      return;
+    }
 
+    setError('');
     socket.emit('chatMessage', { sessionId, message: messageInput });
     setMessageInput('');
   };
@@ -210,12 +224,14 @@ const LobbyPage = ({ user }) => {
     }, 50);
   };
 
-  const isHost = players.length > 0 && user.id === players[0]?.id;
+  const isHost = players.length > 0 && user?.id === players[0]?.id;
 
   const leaveSession = () => {
     socket.emit('leaveSession', { sessionId });
     navigate('/home');
   };
+
+  if (!user) return null;
 
   return (
     <PageContainer>
@@ -270,13 +286,14 @@ const LobbyPage = ({ user }) => {
               </Message>
             ))}
           </ChatMessages>
-          <form onSubmit={sendMessage}>
+          
+          <Form onSubmit={sendMessage} error={error}>
             <ChatInput
               value={messageInput}
               onChange={(e) => setMessageInput(e.target.value)}
               placeholder="Type a message..."
             />
-          </form>
+          </Form>
         </ChatSection>
       </LobbyCard>
 
@@ -285,13 +302,6 @@ const LobbyPage = ({ user }) => {
       )}
     </PageContainer>
   );
-};
-
-LobbyPage.propTypes = {
-  user: PropTypes.shape({
-    id: PropTypes.string.isRequired,
-    username: PropTypes.string.isRequired
-  }).isRequired
 };
 
 export default LobbyPage;

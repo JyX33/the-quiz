@@ -4,6 +4,7 @@ import { useNavigate, useLocation } from 'react-router-dom';
 import styled from 'styled-components';
 import FormInput from '../components/shared/FormInput';
 import LoadingButton from '../components/shared/LoadingButton';
+import Form from '../components/shared/Form';
 import {
   Card,
   PageContainer,
@@ -12,6 +13,7 @@ import {
 import { validatePassword, validateUsername } from '../utils/validation';
 import { useAuth } from '../contexts/AuthContext';
 import LoadingSpinner from '../components/shared/LoadingSpinner';
+import { refreshCsrfToken } from '../utils/axios';
 
 const LoginCard = styled(Card)`
   max-width: 400px;
@@ -26,16 +28,6 @@ const ButtonGroup = styled.div`
   display: flex;
   gap: ${({ theme }) => theme.spacing.md};
   margin-top: ${({ theme }) => theme.spacing.md};
-`;
-
-const ErrorMessage = styled.div`
-  color: ${({ theme }) => theme.error};
-  background: ${({ theme }) => `${theme.error}11`};
-  padding: ${({ theme }) => theme.spacing.sm};
-  border-radius: ${({ theme }) => theme.borderRadius};
-  font-size: 0.9rem;
-  text-align: center;
-  animation: ${({ theme }) => theme.animation.pageTransition};
 `;
 
 const LoginContainer = styled(PageContainer)`
@@ -55,6 +47,11 @@ const LoginPage = () => {
   const navigate = useNavigate();
   const location = useLocation();
 
+  // Refresh CSRF token on component mount
+  useEffect(() => {
+    refreshCsrfToken();
+  }, []);
+
   // Redirect if already authenticated
   useEffect(() => {
     if (isAuthenticated && user) {
@@ -66,29 +63,32 @@ const LoginPage = () => {
   const validateForm = () => {
     const usernameValidation = validateUsername(username);
     if (!usernameValidation.isValid) {
-      setError(usernameValidation.message);
-      return false;
+      return { valid: false, error: usernameValidation.message };
     }
 
     const passwordValidation = validatePassword(password);
     if (!passwordValidation.isValid) {
-      setError(passwordValidation.message);
-      return false;
+      return { valid: false, error: passwordValidation.message };
     }
 
-    return true;
+    return { valid: true };
   };
 
   const handleLogin = async (e) => {
-    // Prevent default form submission behavior
-    if (e) e.preventDefault();
-    
-    if (!validateForm()) return;
+    const validation = validateForm();
+    if (!validation.valid) {
+      console.log(validation.error, e);
+      setError(validation.error);
+      return;
+    }
 
     setError('');
     setIsLoggingIn(true);
 
     try {
+      // Ensure fresh CSRF token
+      await refreshCsrfToken();
+      
       // Use the login function from auth context
       const result = await login(username, password);
       
@@ -120,7 +120,7 @@ const LoginPage = () => {
       <LoginCard>
         <Title>Welcome Back</Title>
         
-        <form onSubmit={handleLogin}>
+        <Form onSubmit={handleLogin} error={error}>
           <FormInput
             id="username"
             label="Username"
@@ -142,8 +142,6 @@ const LoginPage = () => {
             required
           />
 
-          {error && <ErrorMessage>{error}</ErrorMessage>}
-
           <ButtonGroup>
             <LoadingButton 
               type="submit"
@@ -163,7 +161,7 @@ const LoginPage = () => {
               Register
             </LoadingButton>
           </ButtonGroup>
-        </form>
+        </Form>
       </LoginCard>
     </LoginContainer>
   );

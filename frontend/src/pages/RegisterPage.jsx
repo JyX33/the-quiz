@@ -1,14 +1,15 @@
-import { useState } from 'react';
+import api, { refreshCsrfToken } from '../utils/axios';
+import { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import styled from 'styled-components';
 import FormInput from '../components/shared/FormInput';
+import LoadingButton from '../components/shared/LoadingButton';
+import Form from '../components/shared/Form';
 import {
-  Button,
   Card,
   PageContainer,
   Title,
 } from '../components/shared/StyledComponents';
-import api from '../utils/axios';
 import { handleApiError } from '../utils/errorHandler';
 import { validatePassword, validatePasswordConfirmation, validateUsername } from '../utils/validation';
 
@@ -67,16 +68,6 @@ const Requirement = styled.li`
   }
 `;
 
-const ErrorMessage = styled.div`
-  color: ${({ theme }) => theme.error};
-  background: ${({ theme }) => `${theme.error}11`};
-  padding: ${({ theme }) => theme.spacing.sm};
-  border-radius: ${({ theme }) => theme.borderRadius};
-  font-size: 0.9rem;
-  text-align: center;
-  animation: ${({ theme }) => theme.animation.pageTransition};
-`;
-
 const BackToLogin = styled.button`
   background: none;
   border: none;
@@ -91,13 +82,39 @@ const BackToLogin = styled.button`
   }
 `;
 
+/**
+ * RegisterPage component with standardized form submission
+ */
 const RegisterPage = () => {
   const [username, setUsername] = useState('');
   const [password, setPassword] = useState('');
   const [confirmPassword, setConfirmPassword] = useState('');
   const [error, setError] = useState('');
+  const [success, setSuccess] = useState('');
   const [isLoading, setIsLoading] = useState(false);
+  const [redirectCountdown, setRedirectCountdown] = useState(null);
   const navigate = useNavigate();
+
+  // Refresh CSRF token on component mount
+  useEffect(() => {
+    refreshCsrfToken();
+  }, []);
+
+  // Handle redirect countdown
+  useEffect(() => {
+    let timer;
+    if (redirectCountdown !== null && redirectCountdown > 0) {
+      timer = setTimeout(() => {
+        setRedirectCountdown(redirectCountdown - 1);
+      }, 1000);
+    } else if (redirectCountdown === 0) {
+      navigate('/');
+    }
+    
+    return () => {
+      if (timer) clearTimeout(timer);
+    };
+  }, [redirectCountdown, navigate]);
 
   const passwordRequirements = [
     { text: 'At least 8 characters long', test: pwd => pwd.length >= 8 },
@@ -108,54 +125,63 @@ const RegisterPage = () => {
   ];
 
   const getPasswordStrength = () => {
-    const metRequirements = passwordRequirements.filter(req => req.test(password));
-    return (metRequirements.length / passwordRequirements.length) * 100;
+    if (!password) return 0;
+    const metRequirements = passwordRequirements.filter(req => req.test(password)).length;
+    return (metRequirements / passwordRequirements.length) * 100;
   };
 
   const validateForm = () => {
     const usernameValidation = validateUsername(username);
     if (!usernameValidation.isValid) {
-      setError(usernameValidation.message);
-      return false;
+      return { valid: false, error: usernameValidation.message };
     }
 
     const passwordValidation = validatePassword(password);
     if (!passwordValidation.isValid) {
-      setError(passwordValidation.message);
-      return false;
+      return { valid: false, error: passwordValidation.message };
     }
 
     const confirmValidation = validatePasswordConfirmation(password, confirmPassword);
     if (!confirmValidation.isValid) {
-      setError(confirmValidation.message);
-      return false;
+      return { valid: false, error: confirmValidation.message };
     }
 
     if (getPasswordStrength() < 60) {
-      setError('Please create a stronger password');
-      return false;
+      return { valid: false, error: 'Please create a stronger password' };
     }
 
-    return true;
+    return { valid: true };
   };
 
-  const handleRegister = async (e) => {
-    // Prevent default form submission
-    if (e) e.preventDefault();
-    
-    if (!validateForm()) return;
+  const handleRegister = async () => {
+    // Validate form
+    const validation = validateForm();
+    if (!validation.valid) {
+      setError(validation.error);
+      return;
+    }
 
     setError('');
+    setSuccess('');
     setIsLoading(true);
 
     try {
+      // Make sure we have a fresh CSRF token
+      await refreshCsrfToken();
+      
+      // Perform registration
       await api.post('/users/register', { 
         username, 
         password 
       });
-      navigate('/');
+      
+      // Show success message and start redirect countdown
+      setSuccess('Account created successfully! Redirecting to login in 3 seconds...');
+      setRedirectCountdown(3);
     } catch (error) {
-      handleApiError(error, setError, setIsLoading);
+      handleApiError(error, setError);
+    } finally {
+      setIsLoading(false);
     }
   };
 
@@ -164,14 +190,18 @@ const RegisterPage = () => {
       <RegisterCard>
         <Title>Create Account</Title>
         
-        <form onSubmit={handleRegister}>
+        <Form 
+          onSubmit={handleRegister}
+          error={error}
+          success={success}
+        >
           <FormInput
             id="username"
             label="Username"
             value={username}
             onChange={setUsername}
             validator={validateUsername}
-            disabled={isLoading}
+            disabled={isLoading || redirectCountdown !== null}
             required
           />
 
@@ -183,7 +213,7 @@ const RegisterPage = () => {
               value={password}
               onChange={setPassword}
               validator={validatePassword}
-              disabled={isLoading}
+              disabled={isLoading || redirectCountdown !== null}
               required
             />
             <PasswordStrengthMeter>
@@ -205,21 +235,24 @@ const RegisterPage = () => {
             value={confirmPassword}
             onChange={setConfirmPassword}
             validator={(value) => validatePasswordConfirmation(password, value)}
-            disabled={isLoading}
+            disabled={isLoading || redirectCountdown !== null}
             required
           />
 
-          {error && <ErrorMessage>{error}</ErrorMessage>}
-
-          <Button 
+          <LoadingButton 
             type="submit"
-            disabled={isLoading}
+            isLoading={isLoading}
+            loadingText="Creating account..."
+            disabled={isLoading || redirectCountdown !== null}
           >
-            {isLoading ? 'Creating account...' : 'Register'}
-          </Button>
-        </form>
+            Register
+          </LoadingButton>
+        </Form>
 
-        <BackToLogin onClick={() => navigate('/')}>
+        <BackToLogin 
+          onClick={() => navigate('/')}
+          disabled={isLoading || redirectCountdown !== null}
+        >
           Already have an account? Login
         </BackToLogin>
       </RegisterCard>

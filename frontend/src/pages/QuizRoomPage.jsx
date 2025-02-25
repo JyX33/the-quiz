@@ -1,7 +1,7 @@
-import PropTypes from 'prop-types';
 import { useEffect, useState } from 'react';
 import { useParams } from 'react-router-dom';
 import styled, { keyframes } from 'styled-components';
+import Form from '../components/shared/Form';
 import {
   Button,
   Card,
@@ -9,6 +9,7 @@ import {
   PageContainer,
   Title,
 } from '../components/shared/StyledComponents';
+import { useAuth } from '../contexts/AuthContext';
 import socket from '../socket';
 
 const slideIn = keyframes`
@@ -98,19 +99,21 @@ const ButtonGroup = styled.div`
   margin-top: ${({ theme }) => theme.spacing.lg};
 `;
 
-const QuizRoomPage = ({ user }) => {
+const QuizRoomPage = () => {
   const { sessionId } = useParams();
   const [currentQuestion, setCurrentQuestion] = useState(0);
   const [answer, setAnswer] = useState('');
   const [scores, setScores] = useState({}); // {userId: {score, username}}
   const [players, setPlayers] = useState({}); // {userId: username}
-  const [isCreator] = useState(user.id === sessionId); // Session creator's ID matches the sessionId
   const [timeLeft, setTimeLeft] = useState(null); // null means question hasn't started
   const [questionStarted, setQuestionStarted] = useState(false);
-  const [totalQuestions] = useState(5); // This should come from your backend
+  const [totalQuestions, setTotalQuestions] = useState(5); // This should come from your backend
   const [updatedScore, setUpdatedScore] = useState(null);
-  const [setCurrentQuestionData] = useState(null); // Store question data
-  const [setTotalQuestions] = useState(5); // This should come from your backend
+  const [currentQuestionData, setCurrentQuestionData] = useState(null); // Store question data
+  const [error, setError] = useState('');
+  
+  const { user, isAuthenticated } = useAuth();
+  const isCreator = user?.id === sessionId; // Session creator's ID matches the sessionId
 
   useEffect(() => {
     socket.on('playerJoined', (players) => {
@@ -156,7 +159,7 @@ const QuizRoomPage = ({ user }) => {
       socket.off('quizEnded');
       socket.off('quizStateRestored');
     };
-  }, [scores, setCurrentQuestionData, setTotalQuestions]);
+  }, [scores]);
 
   useEffect(() => {
     if (timeLeft !== null && timeLeft > 0) {
@@ -170,17 +173,21 @@ const QuizRoomPage = ({ user }) => {
   }, [timeLeft]);
 
   const submitAnswer = (auto = false) => {
-    if (!auto && !answer.trim()) return;
+    if (!auto && !answer.trim()) {
+      setError('Please enter an answer');
+      return;
+    }
+    
+    setError(''); // Clear any previous errors
+    
     // Send NO_RESPONSE if auto-submitting with no answer, otherwise send trimmed answer
     const submission = (!answer.trim() && auto) ? "NO_RESPONSE" : answer.trim();
     socket.emit('submitAnswer', { sessionId, answer: submission });
     setAnswer('');
   };
 
-  const handleKeyPress = (e) => {
-    if (e.key === 'Enter') {
-      submitAnswer();
-    }
+  const handleAnswerSubmit = () => {
+    submitAnswer();
   };
 
   const startQuestion = () => {
@@ -214,6 +221,9 @@ const QuizRoomPage = ({ user }) => {
     };
   }, [sessionId]);
 
+  // Guard clause if not authenticated
+  if (!isAuthenticated || !user) return null;
+
   return (
     <PageContainer>
       <Title>Quiz Room: {sessionId}</Title>
@@ -226,42 +236,59 @@ const QuizRoomPage = ({ user }) => {
 
       <QuestionCard>
         <h2>Question {currentQuestion + 1}</h2>
-        {/* Add your actual question content here */}
-        <AnswerInput
-          placeholder="Type your answer here..."
-          value={answer}
-          onChange={(e) => setAnswer(e.target.value)}
-          onKeyPress={handleKeyPress}
-        />
+        {currentQuestionData && (
+          <p>{currentQuestionData.question}</p>
+        )}
+        
+        <Form 
+          onSubmit={handleAnswerSubmit} 
+          error={error}
+          style={{ maxWidth: "400px", margin: "0 auto" }}
+        >
+          <AnswerInput
+            placeholder="Type your answer here..."
+            value={answer}
+            onChange={(e) => setAnswer(e.target.value)}
+            disabled={!questionStarted}
+          />
+          
+          {questionStarted && (
+            <Button 
+              type="submit"
+              disabled={!answer.trim()}
+            >
+              Submit Answer
+            </Button>
+          )}
+        </Form>
+        
         <TimerBar $progress={(timeLeft / 30) * 100} />
       </QuestionCard>
 
       <ButtonGroup>
-          {questionStarted ? (
-            <Button onClick={submitAnswer} disabled={!answer.trim()}>
-              Submit Answer
+        {!questionStarted ? (
+          isCreator ? (
+            <Button onClick={startQuestion} $variant="secondary">
+              Start Question
             </Button>
           ) : (
             <Button disabled>
               Waiting for question to start...
             </Button>
-          )}
-          {isCreator && (
-            <>
-              {!questionStarted ? (
-                <Button onClick={startQuestion} $variant="secondary">
-                  Start Question
-                </Button>
-              ) : (
-                <Button onClick={nextQuestion} $variant="secondary">
-                  Next Question
-                </Button>
-              )}
-              <Button onClick={endQuiz} $variant="secondary">
-                End Quiz
-              </Button>
-            </>
-          )}
+          )
+        ) : (
+          isCreator && (
+            <Button onClick={nextQuestion} $variant="secondary">
+              Next Question
+            </Button>
+          )
+        )}
+        
+        {isCreator && (
+          <Button onClick={endQuiz} $variant="secondary">
+            End Quiz
+          </Button>
+        )}
       </ButtonGroup>
 
       <ScoreBoard>
@@ -285,13 +312,6 @@ const QuizRoomPage = ({ user }) => {
       </ScoreBoard>
     </PageContainer>
   );
-};
-
-QuizRoomPage.propTypes = {
-  user: PropTypes.shape({
-    id: PropTypes.string.isRequired,
-    username: PropTypes.string.isRequired
-  }).isRequired
 };
 
 export default QuizRoomPage;
