@@ -359,17 +359,26 @@ const setupSockets = (io) => {
               return socket.emit('error', 'Unauthorized or session not found');
             }
             
-            // Reset responses tracking for this question
+            const currentQuestion = session.current_question;
+            
+            // Reset responses tracking for this question - IMPROVED initialization
             if (!sessionResponses[sessionId]) {
               sessionResponses[sessionId] = {};
             }
-            sessionResponses[sessionId][session.current_question] = new Set();
+            
+            // Initialize this question's responses as a new Set
+            sessionResponses[sessionId][currentQuestion] = new Set();
+            
+            logger.debug('Initialized response tracking for question:', {
+              sessionId,
+              questionNumber: currentQuestion
+            });
             
             // Notify all players that question has started
             io.to(sessionId).emit('questionStarted');
             logger.info('Question started:', { 
               sessionId, 
-              questionNumber: session.current_question 
+              questionNumber: currentQuestion 
             });
           }
         );
@@ -385,32 +394,106 @@ const setupSockets = (io) => {
     socket.on('submitAnswer', ({ sessionId, answer }) => {
       try {
         db.get('SELECT * FROM quiz_sessions WHERE id = ?', [sessionId], (err, session) => {
-          if (err || !session) return;
+          if (err || !session) {
+            logger.warn('Answer submitted for non-existent session:', { sessionId, userId: socket.userId });
+            return socket.emit('error', 'Session not found');
+          }
+          
           const quizId = session.quiz_id;
           const currentQuestion = session.current_question;
-
-          // Track that this player has responded
-          if (sessionResponses[sessionId]?.[currentQuestion]) {
-            sessionResponses[sessionId][currentQuestion].add(socket.userId);
+          
+          // Track that this player has responded - with null checking
+          if (!sessionResponses[sessionId]) {
+            sessionResponses[sessionId] = {};
           }
-
+          if (!sessionResponses[sessionId][currentQuestion]) {
+            sessionResponses[sessionId][currentQuestion] = new Set();
+          }
+          sessionResponses[sessionId][currentQuestion].add(socket.userId);
+    
           db.get('SELECT questions FROM quizzes WHERE id = ?', [quizId], (err, quiz) => {
-            if (err || !quiz) return;
+            if (err) {
+              logger.error('Database error fetching quiz questions:', { 
+                error: err.message, 
+                quizId,
+                sessionId
+              });
+              return;
+            }
+            
+            if (!quiz) {
+              logger.error('Quiz not found:', { quizId, sessionId });
+              return;
+            }
+            
             try {
-              const questions = JSON.parse(quiz.questions);
-              const correctAnswer = questions[currentQuestion].correctAnswer;
-
-              if (!sessionScores[sessionId]) sessionScores[sessionId] = {};
+              // Parse the questions
+              let questions;
+              try {
+                questions = JSON.parse(quiz.questions);
+              } catch (parseError) {
+                logger.error('Error parsing quiz questions JSON:', {
+                  error: parseError.message,
+                  quizId,
+                  sessionId
+                });
+                return;
+              }
+              
+              // Check if the current question index is valid
+              if (!questions || !Array.isArray(questions) || currentQuestion >= questions.length) {
+                logger.error('Invalid question index:', {
+                  currentQuestion,
+                  questionsLength: questions ? questions.length : 0,
+                  quizId,
+                  sessionId
+                });
+                return;
+              }
+              
+              // Check if the question has a correctAnswer property
+              const questionData = questions[currentQuestion];
+              if (!questionData || typeof questionData.correctAnswer === 'undefined') {
+                logger.error('Question missing correctAnswer property:', {
+                  questionData: JSON.stringify(questionData),
+                  currentQuestion,
+                  quizId,
+                  sessionId
+                });
+                return;
+              }
+              
+              const correctAnswer = questionData.correctAnswer;
+    
+              // Initialize scores structure if needed
+              if (!sessionScores[sessionId]) {
+                sessionScores[sessionId] = {};
+              }
               if (!sessionScores[sessionId][socket.userId]) {
                 sessionScores[sessionId][socket.userId] = { score: 0, correct: 0 };
               }
-
+    
+              // Award points for correct answer
               if (answer === correctAnswer) {
                 sessionScores[sessionId][socket.userId].score += 10;
                 sessionScores[sessionId][socket.userId].correct += 1;
+                
+                logger.debug('Correct answer submitted:', {
+                  userId: socket.userId,
+                  question: currentQuestion,
+                  sessionId
+                });
+              } else {
+                logger.debug('Incorrect answer submitted:', {
+                  userId: socket.userId,
+                  question: currentQuestion,
+                  answer,
+                  correctAnswer,
+                  sessionId
+                });
               }
               
-              // Persist scores to database with each submission
+              // Persist scores to database
               const playerScore = sessionScores[sessionId][socket.userId];
               persistSessionScores(
                 sessionId, 
@@ -418,9 +501,10 @@ const setupSockets = (io) => {
                 playerScore.score, 
                 playerScore.correct
               );
-
+    
+              // Update everyone with the new scores
               io.to(sessionId).emit('scoreUpdate', sessionScores[sessionId]);
-
+    
               // Check if all players have responded
               db.all(
                 'SELECT user_id FROM quiz_session_players WHERE session_id = ?',
@@ -432,22 +516,30 @@ const setupSockets = (io) => {
                   
                   if (respondedPlayers && allPlayers.every(id => respondedPlayers.has(id))) {
                     // All players have responded, notify the room
+                    logger.info('All players responded to question:', {
+                      sessionId,
+                      question: currentQuestion,
+                      playerCount: allPlayers.length
+                    });
                     io.to(sessionId).emit('allPlayersResponded');
                   }
                 }
               );
             } catch (error) {
               logger.error('Error processing quiz answer:', { 
-                error: error.message, 
+                error: error.message,
+                stack: error.stack,
                 sessionId, 
-                userId: socket.userId 
+                userId: socket.userId,
+                currentQuestion
               });
             }
           });
         });
       } catch (error) {
         logger.error('Error in submitAnswer handler:', { 
-          error: error.message, 
+          error: error.message,
+          stack: error.stack,
           userId: socket.userId 
         });
         socket.emit('error', 'Failed to process answer submission');
@@ -460,21 +552,87 @@ const setupSockets = (io) => {
           'SELECT * FROM quiz_sessions WHERE id = ? AND creator_id = ?',
           [sessionId, socket.userId],
           (err, session) => {
-            if (err || !session) return socket.emit('error', 'Unauthorized or session not found');
+            if (err || !session) {
+              logger.warn('Unauthorized next question attempt:', { 
+                sessionId, 
+                userId: socket.userId 
+              });
+              return socket.emit('error', 'Unauthorized or session not found');
+            }
             
-            db.run(
-              'UPDATE quiz_sessions SET current_question = current_question + 1 WHERE id = ?',
-              [sessionId],
-              (err) => {
-                if (err) return socket.emit('error', 'Failed to advance question');
-                io.to(sessionId).emit('nextQuestion', session.current_question + 1);
+            // Get current question and quiz info to check bounds
+            const currentQuestion = session.current_question;
+            const quizId = session.quiz_id;
+            
+            // Get quiz details to check number of questions
+            db.get(
+              'SELECT questions FROM quizzes WHERE id = ?',
+              [quizId],
+              (err, quiz) => {
+                if (err || !quiz) {
+                  logger.error('Failed to fetch quiz details for next question:', {
+                    error: err ? err.message : 'Quiz not found',
+                    quizId,
+                    sessionId
+                  });
+                  return socket.emit('error', 'Could not advance to next question');
+                }
+                
+                let questions;
+                try {
+                  questions = JSON.parse(quiz.questions);
+                } catch (parseError) {
+                  logger.error('Error parsing quiz questions:', {
+                    error: parseError.message,
+                    quizId,
+                    sessionId
+                  });
+                  return socket.emit('error', 'Error processing quiz data');
+                }
+                
+                // Check if we've reached the end of questions
+                if (!Array.isArray(questions) || currentQuestion + 1 >= questions.length) {
+                  logger.info('Reached end of questions:', {
+                    currentQuestion,
+                    totalQuestions: Array.isArray(questions) ? questions.length : 0,
+                    sessionId
+                  });
+                  
+                  // Notify client that we've reached the end
+                  socket.emit('error', 'No more questions available. Please end the quiz.');
+                  return;
+                }
+                
+                // Safe to proceed to next question
+                db.run(
+                  'UPDATE quiz_sessions SET current_question = current_question + 1 WHERE id = ?',
+                  [sessionId],
+                  (err) => {
+                    if (err) {
+                      logger.error('Failed to advance question:', {
+                        error: err.message,
+                        sessionId
+                      });
+                      return socket.emit('error', 'Failed to advance question');
+                    }
+                    
+                    logger.info('Advanced to next question:', {
+                      sessionId,
+                      newQuestion: currentQuestion + 1,
+                      totalQuestions: questions.length
+                    });
+                    
+                    io.to(sessionId).emit('nextQuestion', currentQuestion + 1);
+                  }
+                );
               }
             );
           }
         );
       } catch (error) {
         logger.error('Error in nextQuestion handler:', { 
-          error: error.message, 
+          error: error.message,
+          stack: error.stack,
           userId: socket.userId 
         });
         socket.emit('error', 'Failed to process next question request');
@@ -516,14 +674,20 @@ const setupSockets = (io) => {
                     
                     playerIds.forEach((userId) => {
                       const data = scores[userId];
+                      // Use INSERT OR REPLACE instead of INSERT to handle existing scores
                       db.run(
-                        'INSERT INTO scores (session_id, user_id, score, correct_answers, time_taken) VALUES (?, ?, ?, ?, ?)',
+                        'INSERT OR REPLACE INTO scores (session_id, user_id, score, correct_answers, time_taken) VALUES (?, ?, ?, ?, ?)',
                         [sessionId, userId, data.score, data.correct, 0],
                         (err) => {
                           completed++;
                           
                           if (err && !hasError) {
                             hasError = true;
+                            logger.error('Error saving score:', {
+                              error: err.message,
+                              sessionId,
+                              userId
+                            });
                             reject(err);
                             return;
                           }
@@ -549,8 +713,11 @@ const setupSockets = (io) => {
             .then(() => {
               const scores = sessionScores[sessionId] || {};
               io.to(sessionId).emit('quizEnded', scores);
+              
+              // Clean up in-memory data
               delete sessionScores[sessionId];
               delete sessionResponses[sessionId];
+              
               logger.info('Quiz ended successfully:', { 
                 sessionId, 
                 userId: socket.userId,
