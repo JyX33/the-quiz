@@ -1,6 +1,6 @@
 import express from 'express';
 import { v4 as uuidv4 } from 'uuid';
-import { logger } from '../logger.js';
+import { logger, logUserAction } from '../logger.js';
 import { authenticateToken } from '../middleware/auth.js';
 import { AppError, asyncHandler } from '../middleware/error.js';
 import db, { runTransactionAsync } from '../models/db.js';
@@ -43,10 +43,7 @@ router.post('/', authenticateToken, asyncHandler(async (req, res, next) => {
       );
       
       // Log the action within the transaction
-      await db.runAsync(
-        'INSERT INTO logs (user_id, action) VALUES (?, ?)',
-        [req.user.id, 'create_quiz']
-      );
+      await logUserAction(req.user.id, 'create_quiz');
     });
     
     logger.info('Quiz created successfully:', { quizId, userId: req.user.id });
@@ -200,10 +197,7 @@ router.delete('/:id', authenticateToken, asyncHandler(async (req, res, next) => 
       );
       
       // Log the action within the transaction
-      await db.runAsync(
-        'INSERT INTO logs (user_id, action) VALUES (?, ?)',
-        [req.user.id, 'delete_quiz']
-      );
+      await logUserAction(req.user.id, 'delete_quiz');
     });
     
     logger.info('Quiz deleted successfully:', { quizId, userId: req.user.id });

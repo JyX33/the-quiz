@@ -1,16 +1,17 @@
-import axios from 'axios';
+import api from '../utils/axios';
 import PropTypes from 'prop-types';
 import { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import styled from 'styled-components';
+import LoadingSpinner from '../components/shared/LoadingSpinner';
 import {
   Button,
   Input,
   PageContainer,
   Select,
 } from '../components/shared/StyledComponents';
-import LoadingSpinner from '../components/shared/LoadingSpinner';
 import { getValidToken } from '../utils/auth';
+import { handleApiError } from '../utils/errorHandler';
 
 const TopBar = styled.div`
   position: absolute;
@@ -84,20 +85,13 @@ const HomePage = ({ user, updateTheme }) => {
         return;
       }
 
-      const response = await axios.get(`http://localhost:5000/api/sessions/${sessionId}`, {
-        headers: { Authorization: `Bearer ${token}` }
-      });
+      const response = await api.get(`/sessions/${sessionId}`);
       
       if (response.data) {
         navigate(`/lobby/${sessionId}`);
       }
-    } catch (err) {
-      if (err.response?.status === 404) {
-        setError('Session not found. Please check the session ID.');
-      } else {
-        setError('Error joining session. Please try again.');
-      }
-      setIsJoining(false);
+    } catch (error) {
+      handleApiError(error, setError, setIsLoading);
     }
   };
 

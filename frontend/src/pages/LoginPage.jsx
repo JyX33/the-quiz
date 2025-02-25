@@ -1,17 +1,18 @@
-import { useState } from 'react';
+// src/pages/LoginPage.jsx
+import api from '../utils/axios';
 import PropTypes from 'prop-types';
+import { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import axios from 'axios';
 import styled from 'styled-components';
+import FormInput from '../components/shared/FormInput';
+import LoadingButton from '../components/shared/LoadingButton';
 import {
+  Card,
   PageContainer,
   Title,
-  Button,
-  FormGroup,
-  Card,
 } from '../components/shared/StyledComponents';
-import FormInput from '../components/shared/FormInput';
-import { validateUsername, validatePassword } from '../utils/validation';
+import { handleApiError } from '../utils/errorHandler';
+import { validatePassword, validateUsername } from '../utils/validation';
 
 const LoginCard = styled(Card)`
   max-width: 400px;
@@ -75,18 +76,25 @@ const LoginPage = ({ setUser }) => {
     setIsLoading(true);
 
     try {
-      const res = await axios.post('http://localhost:5000/api/users/login', { username, password });
-      localStorage.setItem('token', res.data.token);
+      // Use the API utility that includes withCredentials
+      const res = await api.post('/users/login', { username, password });
+
+      console.log('Login response:', res.data);
+      console.log('Cookies after login:', document.cookie); // This will only show non-HttpOnly cookies
       
-      const userRes = await axios.get('http://localhost:5000/api/users/me', {
-        headers: { Authorization: `Bearer ${res.data.token}` },
-      });
-      
-      setUser(userRes.data);
-      navigate('/home');
-    } catch (err) {
-      setError(err.response?.data?.message || 'Login failed. Please try again.');
-      setIsLoading(false);
+      // If the response includes user data directly, use it
+      if (res.data.user) {
+        setUser(res.data.user);
+        navigate('/home');
+      } else {
+        // Token is handled via cookies now
+        const userRes = await api.get('/users/me');
+        
+        setUser(userRes.data);
+        navigate('/home');
+      }
+    } catch (error) {
+      handleApiError(error, setError, setIsLoading);
     }
   };
 
@@ -127,21 +135,22 @@ const LoginPage = ({ setUser }) => {
         {error && <ErrorMessage>{error}</ErrorMessage>}
 
         <ButtonGroup>
-          <Button 
-            onClick={handleLogin} 
-            disabled={isLoading}
+          <LoadingButton 
+            isLoading={isLoading}
+            loadingText="Logging in..."
+            onClick={handleLogin}
             style={{ flex: 1 }}
           >
-            {isLoading ? 'Logging in...' : 'Login'}
-          </Button>
-          <Button 
+            Login
+          </LoadingButton>
+          <LoadingButton 
             onClick={() => navigate('/register')} 
             $variant="secondary"
             disabled={isLoading}
             style={{ flex: 1 }}
           >
             Register
-          </Button>
+          </LoadingButton>
         </ButtonGroup>
       </LoginCard>
     </LoginContainer>

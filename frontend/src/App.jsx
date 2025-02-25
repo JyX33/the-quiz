@@ -1,4 +1,3 @@
-import axios from 'axios';
 import { useEffect, useState } from 'react';
 import { Route, Routes } from 'react-router-dom';
 import { ThemeProvider } from 'styled-components';
@@ -14,55 +13,81 @@ import QuizRoomPage from './pages/QuizRoomPage';
 import RegisterPage from './pages/RegisterPage';
 import { allianceTheme, hordeTheme } from './styles/themes';
 import { getValidToken } from './utils/auth';
+import api from './utils/axios';
+import { handleApiError } from './utils/errorHandler';
 
 function App() {
   const [theme, setTheme] = useState(allianceTheme);
   const [user, setUser] = useState(null);
   const [isLoading, setIsLoading] = useState(true);
+  const [error, setError] = useState(null);
 
   useEffect(() => {
-    const token = getValidToken();
-    if (token) {
-      axios
-        .get('http://localhost:5000/api/users/me', {
-          headers: { Authorization: `Bearer ${token}` },
-        })
-        .then((res) => {
-          setUser(res.data);
-          setTheme(res.data.theme === 'Horde' ? hordeTheme : allianceTheme);
-        })
-        .catch((err) => console.error(err))
-        .finally(() => setIsLoading(false));
-    } else {
-      setIsLoading(false);
-    }
+    // Check authentication status
+    api.get('/users/me')
+    .then((res) => {
+      setUser(res.data);
+      setTheme(res.data.theme === 'Horde' ? hordeTheme : allianceTheme);
+    })
+    .catch((err) => {
+      // Only show error if it's not a 401 (unauthenticated) error
+      if (err.response?.status !== 401) {
+        handleApiError(err, setError);
+      }
+    })
+    .finally(() => setIsLoading(false));
   }, []);
 
   const updateTheme = (newTheme) => {
     setTheme(newTheme === 'Horde' ? hordeTheme : allianceTheme);
     const token = getValidToken();
     if (token) {
-      axios
-        .put(
-          'http://localhost:5000/api/users/me/theme',
-          { theme: newTheme },
-          { headers: { Authorization: `Bearer ${token}` } }
-        )
+      api
+        .put('/users/me/theme', { theme: newTheme })
         .then(() => {
           setUser(prev => ({
             ...prev,
             theme: newTheme
           }));
         })
-        .catch((err) => console.error(err));
+        .catch((err) => {
+          console.error(err);
+          setError('Failed to update theme');
+        });
     }
   };
 
   return (
     <ThemeProvider theme={theme}>
-      <Routes>
-        <Route path="/" element={<LoginPage setUser={setUser} />} />
-        <Route path="/register" element={<RegisterPage />} />
+      {error && (
+        <div style={{ 
+          color: 'red', 
+          padding: '10px', 
+          backgroundColor: '#ffeeee', 
+          textAlign: 'center',
+          position: 'fixed',
+          top: 0,
+          left: 0,
+          right: 0,
+          zIndex: 1000
+        }}>
+          {error}
+        </div>
+      )}
+      
+      {isLoading ? (
+        <div style={{ 
+          display: 'flex', 
+          justifyContent: 'center', 
+          alignItems: 'center', 
+          height: '100vh' 
+        }}>
+          Loading...
+        </div>
+      ) : (
+        <Routes>
+          <Route path="/" element={<LoginPage setUser={setUser} />} />
+          <Route path="/register" element={<RegisterPage />} />
         <Route 
           path="/home" 
           element={
@@ -103,7 +128,8 @@ function App() {
             </ProtectedRoute>
           } 
         />
-      </Routes>
+        </Routes>
+      )}
       <TokenExpirationAlert warningTime={5 * 60 * 1000} />
       <ConnectionStatus />
     </ThemeProvider>

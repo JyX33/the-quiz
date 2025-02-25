@@ -8,6 +8,10 @@ const authenticateToken = (req, res, next) => {
   const tokenFromCookie = req.cookies?.token;
   const tokenFromHeader = req.headers['authorization']?.split(' ')[1];
   const token = tokenFromCookie || tokenFromHeader;
+
+  // In your auth middleware
+  console.log('Cookies received:', req.cookies);
+  console.log('Headers received:', req.headers);
   
   if (!token) {
     logger.warn('Authentication failed: No token provided', {

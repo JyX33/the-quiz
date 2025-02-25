@@ -1,15 +1,16 @@
+import api from '../utils/axios';
 import { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import axios from 'axios';
 import styled from 'styled-components';
+import FormInput from '../components/shared/FormInput';
 import {
-  PageContainer,
-  Title,
   Button,
   Card,
+  PageContainer,
+  Title,
 } from '../components/shared/StyledComponents';
-import FormInput from '../components/shared/FormInput';
-import { validateUsername, validatePassword, validatePasswordConfirmation } from '../utils/validation';
+import { handleApiError } from '../utils/errorHandler';
+import { validatePassword, validatePasswordConfirmation, validateUsername } from '../utils/validation';
 
 const RegisterContainer = styled(PageContainer)`
   display: flex;
@@ -145,11 +146,13 @@ const RegisterPage = () => {
     setIsLoading(true);
 
     try {
-      await axios.post('http://localhost:5000/api/users/register', { username, password });
+      await api.post('/users/register', { 
+        username, 
+        password 
+      });
       navigate('/');
-    } catch (err) {
-      setError(err.response?.data?.message || 'Registration failed. Please try again.');
-      setIsLoading(false);
+    } catch (error) {
+      handleApiError(error, setError, setIsLoading);
     }
   };
 

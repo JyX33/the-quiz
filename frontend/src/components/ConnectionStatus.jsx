@@ -9,12 +9,13 @@ const StatusIndicator = styled.div`
   width: 10px;
   height: 10px;
   border-radius: 50%;
-  background-color: ${props => props.connected ? props.theme.success : props.theme.error};
-  box-shadow: 0 0 5px ${props => props.connected ? props.theme.success : props.theme.error};
+  background-color: ${props => props.$connected ? props.theme.success : props.theme.error};
+  box-shadow: 0 0 5px ${props => props.$connected ? props.theme.success : props.theme.error};
   transition: background-color 0.3s ease;
+  z-index: 1000;
   
   &:after {
-    content: '${props => props.connected ? 'Connected' : 'Disconnected'}';
+    content: '${props => props.$connected ? 'Connected' : 'Disconnected'}';
     position: absolute;
     left: 15px;
     top: -5px;
@@ -22,6 +23,10 @@ const StatusIndicator = styled.div`
     transition: opacity 0.3s ease;
     white-space: nowrap;
     font-size: 12px;
+    background: ${props => props.theme.background.paper};
+    padding: 3px 6px;
+    border-radius: 3px;
+    box-shadow: 0 1px 3px rgba(0,0,0,0.2);
   }
   
   &:hover:after {
@@ -58,7 +63,7 @@ const ConnectionStatus = () => {
     };
   }, []);
   
-  return <StatusIndicator connected={connected} />;
+  return <StatusIndicator $connected={connected} />;
 };
 
 export default ConnectionStatus;

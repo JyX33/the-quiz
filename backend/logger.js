@@ -1,6 +1,7 @@
 import winston from 'winston';
 import path from 'path';
 import config from './config/config.js';
+import db from './models/db.js';
 
 // Define custom log levels
 const levels = {
@@ -67,32 +68,25 @@ const stream = {
 /**
  * Log user actions to the database
  * Moved from models/logger.js to consolidate logging functionality
- * @param {Object} db - Database connection
  * @param {number} userId - User ID
  * @param {string} action - Description of the action
  * @returns {Promise<number>} - ID of the logged action
  */
-const logUserAction = async (db, userId, action) => {
+const logUserAction = async (userId, action) => {
   try {
-    const result = await new Promise((resolve, reject) => {
-      db.run(
-        'INSERT INTO logs (user_id, action) VALUES (?, ?)',
-        [userId, action],
-        function (err) {
-          if (err) reject(err);
-          else resolve(this.lastID);
-        }
-      );
-    });
+    const result = await db.runAsync(
+      'INSERT INTO logs (user_id, action) VALUES (?, ?)',
+      [userId, action]
+    );
 
     // Log the action using Winston
     logger.info(`User Action: ${action}`, {
       userId,
-      actionId: result,
+      actionId: result.lastID,
       timestamp: new Date().toISOString()
     });
 
-    return result;
+    return result.lastID;
   } catch (error) {
     logger.error('Database logging error:', {
       userId,

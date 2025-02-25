@@ -17,7 +17,7 @@ const SpinnerContainer = styled.div`
 const Spinner = styled.div`
   border: 4px solid rgba(0, 0, 0, 0.1);
   border-radius: 50%;
-  border-top: 4px solid ${props => props.theme.colors.primary};
+  border-top: 4px solid ${props => props.theme.primary};
   width: 40px;
   height: 40px;
   animation: ${spin} 1s linear infinite;

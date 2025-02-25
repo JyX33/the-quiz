@@ -2,7 +2,7 @@ import bcrypt from 'bcrypt';
 import express from 'express';
 import jwt from 'jsonwebtoken';
 import config from '../config/config.js';
-import { logAction, logger } from '../logger.js';
+import { logUserAction, logger } from '../logger.js';
 import { authenticateToken } from '../middleware/auth.js';
 import { AppError, asyncHandler } from '../middleware/error.js';
 import db, { runTransaction } from '../models/db.js';
@@ -25,12 +25,7 @@ router.post('/register', asyncHandler(async (req, res, next) => {
   const hashedPassword = await bcrypt.hash(password, 10);
   
   // Check if username already exists
-  const existingUser = await new Promise((resolve, reject) => {
-    db.get('SELECT id FROM users WHERE username = ?', [username], (err, user) => {
-      if (err) reject(err);
-      else resolve(user);
-    });
-  });
+  const existingUser = await db.getAsync('SELECT id FROM users WHERE username = ?', [username]);
   
   if (existingUser) {
     throw new AppError('Username already exists', 409, 'DUPLICATE_USERNAME');
@@ -41,26 +36,18 @@ router.post('/register', asyncHandler(async (req, res, next) => {
     const userId = await runTransaction(() => {
       return new Promise((resolve, reject) => {
         // Insert new user
-        db.run(
+        db.runAsync(
           'INSERT INTO users (username, password) VALUES (?, ?)',
-          [username, hashedPassword],
-          function (err) {
-            if (err) reject(err);
-            else {
-              const userId = this.lastID;
-              
-              // Log the registration action
-              db.run(
-                'INSERT INTO logs (user_id, action) VALUES (?, ?)',
-                [userId, 'register'],
-                (err) => {
-                  if (err) reject(err);
-                  else resolve(userId);
-                }
-              );
-            }
-          }
-        );
+          [username, hashedPassword]
+        )
+          .then(result => {
+            const userId = result.lastID;
+            
+            // Log the registration action
+            return logUserAction(userId, 'register')
+              .then(() => resolve(userId));
+          })
+          .catch(err => reject(err));
       });
     });
     
@@ -85,12 +72,7 @@ router.post('/login', asyncHandler(async (req, res, next) => {
   }
   
   // Get user from database
-  const user = await new Promise((resolve, reject) => {
-    db.get('SELECT * FROM users WHERE username = ?', [username], (err, user) => {
-      if (err) reject(err);
-      else resolve(user);
-    });
-  });
+  const user = await db.getAsync('SELECT * FROM users WHERE username = ?', [username]);
   
   if (!user) {
     throw new AppError('Invalid username or password', 401, 'INVALID_CREDENTIALS');
@@ -119,13 +101,13 @@ router.post('/login', asyncHandler(async (req, res, next) => {
   });
   
   try {
-    await logAction(user.id, 'login');
+    await logUserAction(user.id, 'login');
     logger.info('User logged in successfully:', { userId: user.id, username });
     
     // Return user data but NOT the token in response body
     res.json({ 
       success: true, 
-      user: { id: user.id, username: user.username } 
+      user: { id: user.id, username: user.username, theme: user.theme } 
     });
   } catch (error) {
     // Login succeeded but logging failed, continue anyway
@@ -149,16 +131,7 @@ router.post('/logout', (req, res) => {
 router.get('/me', authenticateToken, asyncHandler(async (req, res, next) => {
   logger.debug('Fetching user profile:', { userId: req.user.id });
   
-  const user = await new Promise((resolve, reject) => {
-    db.get(
-      'SELECT id, username, theme FROM users WHERE id = ?',
-      [req.user.id],
-      (err, user) => {
-        if (err) reject(err);
-        else resolve(user);
-      }
-    );
-  });
+  const user = await db.getAsync('SELECT id, username, theme FROM users WHERE id = ?', [req.user.id]);
   
   if (!user) {
     throw new AppError('User not found', 404, 'USER_NOT_FOUND');
@@ -221,24 +194,16 @@ router.put('/me/theme', authenticateToken, asyncHandler(async (req, res, next) =
     // Use transaction to ensure theme update and logging happens atomically
     await runTransaction(() => {
       return new Promise((resolve, reject) => {
-        db.run(
+        db.runAsync(
           'UPDATE users SET theme = ? WHERE id = ?',
-          [theme, req.user.id],
-          function (err) {
-            if (err) reject(err);
-            else {
-              // Log the theme update action
-              db.run(
-                'INSERT INTO logs (user_id, action) VALUES (?, ?)',
-                [req.user.id, 'update_theme'],
-                (err) => {
-                  if (err) reject(err);
-                  else resolve();
-                }
-              );
-            }
-          }
-        );
+          [theme, req.user.id]
+        )
+          .then(() => {
+            // Log the theme update action
+            return logUserAction(req.user.id, 'update_theme')
+              .then(() => resolve());
+          })
+          .catch(err => reject(err));
       });
     });
     

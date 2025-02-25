@@ -1,9 +1,9 @@
 import express from 'express';
 import { v4 as uuidv4 } from 'uuid';
-import { logAction, logger } from '../logger.js';
+import { logUserAction, logger } from '../logger.js';
 import { authenticateToken } from '../middleware/auth.js';
 import { AppError, asyncHandler } from '../middleware/error.js';
-import db, { runTransaction } from '../models/db.js';
+import db, { runTransactionAsync } from '../models/db.js';
 
 const router = express.Router();
 
@@ -17,12 +17,7 @@ router.post('/', authenticateToken, asyncHandler(async (req, res, next) => {
   }
   
   // Verify that the quiz exists
-  const quiz = await new Promise((resolve, reject) => {
-    db.get('SELECT id FROM quizzes WHERE id = ?', [quizId], (err, row) => {
-      if (err) reject(err);
-      else resolve(row);
-    });
-  });
+  const quiz = await db.getAsync('SELECT id FROM quizzes WHERE id = ?', [quizId]);
   
   if (!quiz) {
     throw new AppError('Quiz not found', 404, 'QUIZ_NOT_FOUND');
@@ -37,28 +32,18 @@ router.post('/', authenticateToken, asyncHandler(async (req, res, next) => {
 
   try {
     // Use transaction to ensure both operations succeed or fail together
-    await runTransaction(() => {
+    await runTransactionAsync(async () => {
       // Create the session
-      return new Promise((resolve, reject) => {
-        db.run(
-          'INSERT INTO quiz_sessions (id, quiz_id, creator_id, status) VALUES (?, ?, ?, ?)',
-          [sessionId, quizId, req.user.id, 'waiting'],
-          function (err) {
-            if (err) reject(err);
-            else {
-              // Add the session creator to the quiz_session_players table
-              db.run(
-                'INSERT INTO quiz_session_players (session_id, user_id) VALUES (?, ?)',
-                [sessionId, req.user.id],
-                (err) => {
-                  if (err) reject(err);
-                  else resolve();
-                }
-              );
-            }
-          }
-        );
-      });
+      await db.runAsync(
+        'INSERT INTO quiz_sessions (id, quiz_id, creator_id, status) VALUES (?, ?, ?, ?)',
+        [sessionId, quizId, req.user.id, 'waiting']
+      );
+      
+      // Add the session creator to the quiz_session_players table
+      await db.runAsync(
+        'INSERT INTO quiz_session_players (session_id, user_id) VALUES (?, ?)',
+        [sessionId, req.user.id]
+      );
     });
     
     logger.info('Session creator added to quiz_session_players:', { 
@@ -66,7 +51,7 @@ router.post('/', authenticateToken, asyncHandler(async (req, res, next) => {
       userId: req.user.id 
     });
 
-    await logAction(req.user.id, 'create_session');
+    await logUserAction(req.user.id, 'create_session');
     logger.info('Quiz session created successfully:', { 
       sessionId, 
       quizId, 
@@ -93,19 +78,13 @@ router.get('/:id', authenticateToken, asyncHandler(async (req, res, next) => {
     userId: req.user.id 
   });
 
-  const session = await new Promise((resolve, reject) => {
-    db.get(
-      `SELECT qs.*, q.questions, q.category, q.difficulty 
-       FROM quiz_sessions qs 
-       JOIN quizzes q ON qs.quiz_id = q.id 
-       WHERE qs.id = ?`,
-      [sessionId],
-      (err, row) => {
-        if (err) reject(err);
-        else resolve(row);
-      }
-    );
-  });
+  const session = await db.getAsync(
+    `SELECT qs.*, q.questions, q.category, q.difficulty 
+     FROM quiz_sessions qs 
+     JOIN quizzes q ON qs.quiz_id = q.id 
+     WHERE qs.id = ?`,
+    [sessionId]
+  );
   
   if (!session) {
     throw new AppError('Session not found', 404, 'SESSION_NOT_FOUND');
@@ -129,30 +108,19 @@ router.get('/:id/players', authenticateToken, asyncHandler(async (req, res, next
   });
 
   // Verify that the session exists
-  const sessionExists = await new Promise((resolve, reject) => {
-    db.get('SELECT id FROM quiz_sessions WHERE id = ?', [sessionId], (err, row) => {
-      if (err) reject(err);
-      else resolve(row);
-    });
-  });
+  const sessionExists = await db.getAsync('SELECT id FROM quiz_sessions WHERE id = ?', [sessionId]);
   
   if (!sessionExists) {
     throw new AppError('Session not found', 404, 'SESSION_NOT_FOUND');
   }
 
-  const players = await new Promise((resolve, reject) => {
-    db.all(
-      `SELECT u.id, u.username 
-       FROM quiz_session_players qsp 
-       JOIN users u ON qsp.user_id = u.id 
-       WHERE qsp.session_id = ?`,
-      [sessionId],
-      (err, rows) => {
-        if (err) reject(err);
-        else resolve(rows || []);
-      }
-    );
-  });
+  const players = await db.allAsync(
+    `SELECT u.id, u.username 
+     FROM quiz_session_players qsp 
+     JOIN users u ON qsp.user_id = u.id 
+     WHERE qsp.session_id = ?`,
+    [sessionId]
+  );
   
   logger.info('Session players retrieved successfully:', { 
     sessionId,
@@ -166,21 +134,15 @@ router.get('/:id/players', authenticateToken, asyncHandler(async (req, res, next
 router.get('/leaderboard/global', asyncHandler(async (req, res, next) => {
   logger.debug('Fetching global leaderboard');
 
-  const leaderboard = await new Promise((resolve, reject) => {
-    db.all(
-      `SELECT u.username, SUM(s.score) as total_score 
-       FROM scores s 
-       JOIN users u ON s.user_id = u.id 
-       GROUP BY u.id, u.username 
-       ORDER BY total_score DESC 
-       LIMIT 10`,
-      [],
-      (err, rows) => {
-        if (err) reject(err);
-        else resolve(rows || []);
-      }
-    );
-  });
+  const leaderboard = await db.allAsync(
+    `SELECT u.username, SUM(s.score) as total_score 
+     FROM scores s 
+     JOIN users u ON s.user_id = u.id 
+     GROUP BY u.id, u.username 
+     ORDER BY total_score DESC 
+     LIMIT 10`,
+    []
+  );
   
   logger.info('Global leaderboard retrieved successfully:', { 
     playerCount: leaderboard.length 
@@ -193,19 +155,13 @@ router.get('/leaderboard/global', asyncHandler(async (req, res, next) => {
 router.get('/', authenticateToken, asyncHandler(async (req, res, next) => {
   logger.debug('Fetching user sessions:', { userId: req.user.id });
 
-  const sessions = await new Promise((resolve, reject) => {
-    db.all(
-      `SELECT qs.*, q.category, q.difficulty 
-       FROM quiz_sessions qs 
-       JOIN quizzes q ON qs.quiz_id = q.id 
-       WHERE qs.creator_id = ?`,
-      [req.user.id],
-      (err, rows) => {
-        if (err) reject(err);
-        else resolve(rows || []);
-      }
-    );
-  });
+  const sessions = await db.allAsync(
+    `SELECT qs.*, q.category, q.difficulty 
+     FROM quiz_sessions qs 
+     JOIN quizzes q ON qs.quiz_id = q.id 
+     WHERE qs.creator_id = ?`,
+    [req.user.id]
+  );
   
   logger.info('User sessions retrieved successfully:', { 
     userId: req.user.id,

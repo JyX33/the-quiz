@@ -1,4 +1,4 @@
-import axios from 'axios';
+import api from '../utils/axios';
 import PropTypes from 'prop-types';
 import { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
@@ -9,7 +9,7 @@ const AlertContainer = styled.div`
   position: fixed;
   bottom: 20px;
   right: 20px;
-  background-color: ${props => props.theme.colors.warning};
+  background-color: ${props => props.theme.warning};
   color: #fff;
   padding: 15px 20px;
   border-radius: 5px;
@@ -20,7 +20,7 @@ const AlertContainer = styled.div`
 
 const AlertButton = styled.button`
   background-color: white;
-  color: ${props => props.theme.colors.text};
+  color: ${props => props.theme.text.primary};
   border: none;
   padding: 5px 10px;
   margin-left: 10px;
@@ -100,7 +100,7 @@ const TokenExpirationAlert = ({ warningTime = 5 * 60 * 1000 }) => {
 
   const handleStayLoggedIn = async () => {
     try {
-      await axios.post('http://localhost:5000/api/users/refresh-token');
+      await api.post('/users/refresh-token');
       setShowAlert(false);
     } catch (error) {
       console.error('Error refreshing token:', error);

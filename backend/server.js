@@ -8,54 +8,34 @@ if (process.env.NODE_ENV !== 'production') {
   }
 }
 
-import csrf from 'csurf';
-
-// Setup CSRF middleware with cookies
-const csrfProtection = csrf({ cookie: true });
-
-// Apply to state-changing routes
-app.use('/api/users/login', csrfProtection);
-app.use('/api/users/register', csrfProtection);
-app.use('/api/quizzes', csrfProtection);
-app.use('/api/sessions', csrfProtection);
-
-// Add route to get CSRF token
-app.get('/api/csrf-token', csrfProtection, (req, res) => {
-  res.json({ csrfToken: req.csrfToken() });
-});
-
+import cookieParser from 'cookie-parser';
+import cors from 'cors';
 import express from 'express';
 import http from 'http';
-import cors from 'cors';
-import { Server } from 'socket.io';
 import morgan from 'morgan';
+import { Server } from 'socket.io';
 import config from './config/config.js';
 import { logger, stream } from './logger.js';
 import db from './models/db.js';
 
-// Try loading cookie-parser (it might not be installed yet)
-let cookieParser;
-try {
-  cookieParser = (await import('cookie-parser')).default;
-} catch (error) {
-  logger.warn('cookie-parser not available, cookie authentication will not work');
-  cookieParser = (req, res, next) => next(); // Fallback middleware that does nothing
-}
-
 // Import routes
-import userRoutes from './routes/users.js';
 import quizRoutes from './routes/quizzes.js';
 import sessionRoutes from './routes/sessions.js';
+import userRoutes from './routes/users.js';
 
 // Import socket setup
 import setupSockets from './sockets/index.js';
 
 // Import error handling middleware
+import csrf from 'csurf';
 import { errorHandler, notFoundHandler } from './middleware/error.js';
+
 
 // Create Express app and HTTP server
 const app = express();
 const server = http.createServer(app);
+
+
 
 // Setup Morgan middleware with Winston stream
 app.use(morgan(config.logging.morganFormat, { stream }));
@@ -74,12 +54,40 @@ const io = new Server(server, {
 });
 
 // Middleware
-app.use(cors({ 
-  origin: config.corsOrigin,
-  credentials: true, // Enable CORS with credentials
-}));
-app.use(express.json());
+const corsOptions = {
+  origin: config.corsOrigin || 'http://localhost:5173',
+  credentials: true, // Important for cookies
+  methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
+  allowedHeaders: ['Content-Type', 'Authorization', 'X-CSRF-Token'],
+  exposedHeaders: ['X-CSRF-Token']
+};
+
+// Apply CORS to all routes
+app.use(cors(corsOptions));
+
+// Create CSRF protection middleware
+const csrfProtection = csrf({
+  cookie: {
+    httpOnly: true,
+    secure: process.env.NODE_ENV === 'production',
+    sameSite: process.env.NODE_ENV === 'production' ? 'none' : 'lax'
+  }
+});
+
 app.use(cookieParser()); // Add cookie-parser middleware
+
+// Apply to state-changing routes
+app.use('/api/users/login', csrfProtection);
+app.use('/api/users/register', csrfProtection);
+app.use('/api/quizzes', csrfProtection);
+app.use('/api/sessions', csrfProtection);
+
+// Add route to get CSRF token
+app.get('/api/csrf-token', csrfProtection, (req, res) => {
+  res.json({ csrfToken: req.csrfToken() });
+});
+
+app.use(express.json());
 
 // Routes
 app.use('/api/users', userRoutes);

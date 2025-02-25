@@ -1,17 +1,19 @@
+import api from '../utils/axios';
 import { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import axios from 'axios';
 import styled from 'styled-components';
-import {
-  PageContainer,
-  Title,
-  Button,
-  QuestionContainer,
-  FormGroup,
-} from '../components/shared/StyledComponents';
 import FormInput from '../components/shared/FormInput';
-import { validateQuestion, validateQuizTitle, validateOptions } from '../utils/validation';
+import {
+  Button,
+  FormGroup,
+  PageContainer,
+  QuestionContainer,
+  Title,
+} from '../components/shared/StyledComponents';
 import { getValidToken } from '../utils/auth';
+import { handleApiError } from '../utils/errorHandler';
+import { validateOptions, validateQuestion, validateQuizTitle } from '../utils/validation';
+import LoadingButton from '../components/shared/LoadingButton';
 
 const ErrorMessage = styled.div`
   color: ${({ theme }) => theme.error};
@@ -118,22 +120,19 @@ const CreateQuizPage = () => {
     }
 
     try {
-      const res = await axios.post(
-        'http://localhost:5000/api/quizzes',
-        { title, questions, category, difficulty },
-        { headers: { Authorization: `Bearer ${token}` } }
+      const res = await api.post(
+        '/quizzes',
+        { title, questions, category, difficulty }
       );
       
-      const sessionRes = await axios.post(
-        'http://localhost:5000/api/sessions',
-        { quizId: res.data.quizId },
-        { headers: { Authorization: `Bearer ${token}` } }
+      const sessionRes = await api.post(
+        '/sessions',
+        { quizId: res.data.quizId }
       );
       
       navigate(`/lobby/${sessionRes.data.sessionId}`);
-    } catch (err) {
-      setError(err.response?.data?.message || 'Failed to create quiz. Please try again.');
-      setIsLoading(false);
+    } catch (error) {
+      handleApiError(error, setError, setIsLoading);
     }
   };
 
@@ -215,9 +214,9 @@ const CreateQuizPage = () => {
       {error && <ErrorMessage>{error}</ErrorMessage>}
       
       <FormGroup>
-        <Button onClick={createQuiz} disabled={isLoading}>
+        <LoadingButton onClick={createQuiz} disabled={isLoading}>
           {isLoading ? 'Creating...' : 'Create Quiz'}
-        </Button>
+        </LoadingButton>
       </FormGroup>
     </QuizCreationContainer>
   );

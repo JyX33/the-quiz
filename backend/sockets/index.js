@@ -1,4 +1,4 @@
-import { logAction, logger } from '../logger.js';
+import { logUserAction, logger } from '../logger.js';
 import { authenticateSocket } from '../middleware/auth.js';
 import db, { runTransaction } from '../models/db.js';
 
@@ -112,7 +112,7 @@ const setupSockets = (io) => {
                 return socket.emit('error', 'Failed to join session');
               }
               try {
-                await logAction(socket.userId, 'join_session');
+                await logUserAction(socket.userId, 'join_session');
                 logger.info('User joined session:', { sessionId, userId: socket.userId });
                 
                 socket.join(sessionId);
@@ -220,7 +220,7 @@ const setupSockets = (io) => {
               return socket.emit('error', 'Failed to leave session');
             }
             try {
-              await logAction(socket.userId, 'leave_session');
+              await logUserAction(socket.userId, 'leave_session');
               logger.info('User left session successfully:', { sessionId, userId: socket.userId });
 
               db.all(
@@ -287,7 +287,7 @@ const setupSockets = (io) => {
               async (err) => {
                 if (err) return socket.emit('error', 'Failed to start quiz');
                 try {
-                  await logAction(socket.userId, 'start_quiz');
+                  await logUserAction(socket.userId, 'start_quiz');
                   io.to(sessionId).emit('quizStarted');
                 } catch (error) {
                   logger.error('Error logging start quiz action:', { 

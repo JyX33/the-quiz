@@ -1,4 +1,4 @@
-import * as sqlite3 from 'sqlite3';
+import sqlite3 from 'sqlite3';
 import config from '../config/config.js';
 import { logger } from '../logger.js';
 

@@ -1,6 +1,6 @@
+import PropTypes from 'prop-types';
 import { useState } from 'react';
 import styled from 'styled-components';
-import PropTypes from 'prop-types';
 
 const InputContainer = styled.div`
   margin-bottom: 20px;
@@ -16,26 +16,25 @@ const Label = styled.label`
 const StyledInput = styled.input`
   width: 100%;
   padding: 12px;
-  border: 1px solid ${props => props.error ? props.theme.colors.error : props.theme.colors.border};
+  border: 1px solid ${props => props.$error ? props.theme.error : props.theme.input.border};
   border-radius: 4px;
-  background-color: ${props => props.theme.colors.inputBackground};
-  color: ${props => props.theme.colors.text};
+  background-color: ${props => props.theme.input.background};
+  color: ${props => props.theme.text.primary};
   font-size: 1rem;
   transition: border 0.2s;
   
   &:focus {
     outline: none;
-    border-color: ${props => props.error ? props.theme.colors.error : props.theme.colors.primary};
+    border-color: ${props => props.$error ? props.theme.error : props.theme.primary};
   }
 `;
 
 const ErrorMessage = styled.div`
-  color: ${props => props.theme.colors.error};
+  color: ${props => props.theme?.error || props.theme?.colors?.error || '#f44336'};
   font-size: 0.875rem;
   margin-top: 5px;
   min-height: 18px;
 `;
-
 /**
  * Reusable form input component with validation
  * 
@@ -97,7 +96,7 @@ const FormInput = ({
         onChange={handleChange}
         onBlur={handleBlur}
         placeholder={placeholder}
-        error={!!error}
+        $error={!!error}
         required={required}
         {...props}
       />

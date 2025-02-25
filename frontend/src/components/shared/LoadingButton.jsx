@@ -1,5 +1,6 @@
-import styled, { keyframes } from 'styled-components';
+// src/components/shared/LoadingButton.jsx
 import PropTypes from 'prop-types';
+import styled, { keyframes } from 'styled-components';
 import { Button } from './StyledComponents';
 
 const rotate = keyframes`
