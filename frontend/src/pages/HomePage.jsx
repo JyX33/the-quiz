@@ -1,6 +1,6 @@
 import api from '../utils/axios';
 import PropTypes from 'prop-types';
-import { useEffect, useState } from 'react';
+import { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import styled from 'styled-components';
 import LoadingSpinner from '../components/shared/LoadingSpinner';
@@ -10,8 +10,8 @@ import {
   PageContainer,
   Select,
 } from '../components/shared/StyledComponents';
-import { checkAuthentication, removeToken } from '../utils/auth';
 import { handleApiError } from '../utils/errorHandler';
+import { useAuth } from '../contexts/AuthContext';
 
 const TopBar = styled.div`
   position: absolute;
@@ -55,23 +55,14 @@ const ErrorMessage = styled.div`
   margin-top: ${({ theme }) => theme.spacing.xs};
 `;
 
-const HomePage = ({ user, updateTheme }) => {
+const HomePage = ({ updateTheme }) => {
   const [sessionId, setSessionId] = useState('');
   const [error, setError] = useState('');
   const [isLoading, setIsLoading] = useState(false);
   const [isJoining, setIsJoining] = useState(false);
   const navigate = useNavigate();
-
-  useEffect(() => {
-    const verifyAuth = async () => {
-      const isAuthenticated = await checkAuthentication();
-      if (!isAuthenticated) {
-        navigate('/');
-      }
-    };
-
-    verifyAuth();
-  }, [navigate]);
+  
+  const { user, logout } = useAuth();
 
   const handleJoinSession = async () => {
     if (!sessionId.trim()) {
@@ -83,19 +74,13 @@ const HomePage = ({ user, updateTheme }) => {
       setError('');
       setIsJoining(true);
       
-      const isAuthenticated = await checkAuthentication();
-      if (!isAuthenticated) {
-        navigate('/');
-        return;
-      }
-
       const response = await api.get(`/sessions/${sessionId}`);
       
       if (response.data) {
         navigate(`/lobby/${sessionId}`);
       }
     } catch (error) {
-      handleApiError(error, setError, setIsLoading);
+      handleApiError(error, setError);
     } finally {
       setIsJoining(false);
     }
@@ -107,8 +92,10 @@ const HomePage = ({ user, updateTheme }) => {
   };
 
   const handleLogout = async () => {
-    await removeToken();
-    navigate('/');
+    const success = await logout();
+    if (success) {
+      navigate('/');
+    }
   };
 
   return (
@@ -136,6 +123,8 @@ const HomePage = ({ user, updateTheme }) => {
           <LoadingSpinner />
         ) : (
           <>
+            <h1>Welcome, {user?.username || 'User'}!</h1>
+            
             <Button 
               onClick={handleCreateQuiz}
               disabled={isJoining}
@@ -171,11 +160,6 @@ const HomePage = ({ user, updateTheme }) => {
 };
 
 HomePage.propTypes = {
-  user: PropTypes.shape({
-    username: PropTypes.string.isRequired,
-    theme: PropTypes.string,
-    id: PropTypes.string.isRequired
-  }),
   updateTheme: PropTypes.func.isRequired
 };
 

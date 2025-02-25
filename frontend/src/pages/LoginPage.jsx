@@ -1,7 +1,6 @@
 // src/pages/LoginPage.jsx
-import PropTypes from 'prop-types';
-import { useEffect, useState } from 'react';
-import { useLocation, useNavigate } from 'react-router-dom';
+import { useState, useEffect } from 'react';
+import { useNavigate, useLocation } from 'react-router-dom';
 import styled from 'styled-components';
 import FormInput from '../components/shared/FormInput';
 import LoadingButton from '../components/shared/LoadingButton';
@@ -10,10 +9,9 @@ import {
   PageContainer,
   Title,
 } from '../components/shared/StyledComponents';
-import { checkAuthentication } from '../utils/auth';
-import api from '../utils/axios';
-import { handleApiError } from '../utils/errorHandler';
 import { validatePassword, validateUsername } from '../utils/validation';
+import { useAuth } from '../contexts/AuthContext';
+import LoadingSpinner from '../components/shared/LoadingSpinner';
 
 const LoginCard = styled(Card)`
   max-width: 400px;
@@ -47,61 +45,23 @@ const LoginContainer = styled(PageContainer)`
   background: ${({ theme }) => `linear-gradient(135deg, ${theme.background.main} 0%, ${theme.background.accent} 100%)`};
 `;
 
-const LoginPage = ({ setUser }) => {
+const LoginPage = () => {
   const [username, setUsername] = useState('');
   const [password, setPassword] = useState('');
   const [error, setError] = useState('');
-  const [isLoading, setIsLoading] = useState(false);
-  const [isCheckingAuth, setIsCheckingAuth] = useState(true);
+  const [isLoggingIn, setIsLoggingIn] = useState(false);
+  
+  const { isAuthenticated, isLoading, login, user } = useAuth();
   const navigate = useNavigate();
   const location = useLocation();
 
-  // Check if user is already authenticated
+  // Redirect if already authenticated
   useEffect(() => {
-    // Create abort controller to cancel request if component unmounts
-    const abortController = new AbortController();
-    
-    const checkAuth = async () => {
-      try {
-        // Reset any previous redirect attempt tracking
-        sessionStorage.setItem('redirectAttempts', '0');
-        
-        const isAuthenticated = await checkAuthentication();
-        if (isAuthenticated) {
-          // Get user data
-          const userRes = await api.get('/users/me', { 
-            signal: abortController.signal 
-          });
-          
-          setUser(userRes.data);
-          
-          // Redirect to the intended destination or home
-          const from = location.state?.from?.pathname || '/home';
-          navigate(from, { replace: true });
-        }
-      } catch (error) {
-        // Only handle if not aborted
-        if (!abortController.signal.aborted) {
-          // If it's not a 401/403 error, show it to the user
-          if (error.response?.status !== 401 && error.response?.status !== 403) {
-            setError('Error checking authentication status. Please try again.');
-          }
-        }
-      } finally {
-        // Only update state if not aborted
-        if (!abortController.signal.aborted) {
-          setIsCheckingAuth(false);
-        }
-      }
-    };
-
-    checkAuth();
-    
-    // Cleanup function
-    return () => {
-      abortController.abort();
-    };
-  }, [location, navigate, setUser]);
+    if (isAuthenticated && user) {
+      const from = location.state?.from?.pathname || '/home';
+      navigate(from, { replace: true });
+    }
+  }, [isAuthenticated, navigate, location, user]);
 
   const validateForm = () => {
     const usernameValidation = validateUsername(username);
@@ -126,39 +86,31 @@ const LoginPage = ({ setUser }) => {
     if (!validateForm()) return;
 
     setError('');
-    setIsLoading(true);
+    setIsLoggingIn(true);
 
     try {
-      // Reset any auth loop detection
-      sessionStorage.setItem('redirectAttempts', '0');
+      // Use the login function from auth context
+      const result = await login(username, password);
       
-      // Use the API utility that includes withCredentials
-      const res = await api.post('/users/login', { username, password });
-      
-      // If the response includes user data directly, use it
-      if (res.data.user) {
-        setUser(res.data.user);
+      if (result.success) {
+        // Navigate on successful login
         navigate('/home');
       } else {
-        // Token is handled via cookies now
-        try {
-          const userRes = await api.get('/users/me');
-          setUser(userRes.data);
-          navigate('/home');
-        } catch (userError) {
-          // If we can't get user data even after login
-          handleApiError(userError, setError, setIsLoading);
-        }
+        setError(result.error || 'Login failed');
       }
     } catch (error) {
-      handleApiError(error, setError, setIsLoading);
+      setError('An unexpected error occurred during login');
+      console.error('Login error:', error);
+    } finally {
+      setIsLoggingIn(false);
     }
   };
 
-  if (isCheckingAuth) {
+  // If we're checking auth, show loading spinner
+  if (isLoading && !isLoggingIn) {
     return (
       <LoginContainer>
-        <div>Checking authentication...</div>
+        <LoadingSpinner />
       </LoginContainer>
     );
   }
@@ -168,7 +120,6 @@ const LoginPage = ({ setUser }) => {
       <LoginCard>
         <Title>Welcome Back</Title>
         
-        {/* Wrap inputs in a form element and add onSubmit handler */}
         <form onSubmit={handleLogin}>
           <FormInput
             id="username"
@@ -176,7 +127,7 @@ const LoginPage = ({ setUser }) => {
             value={username}
             onChange={setUsername}
             validator={validateUsername}
-            disabled={isLoading}
+            disabled={isLoggingIn}
             required
           />
 
@@ -187,7 +138,7 @@ const LoginPage = ({ setUser }) => {
             value={password}
             onChange={setPassword}
             validator={validatePassword}
-            disabled={isLoading}
+            disabled={isLoggingIn}
             required
           />
 
@@ -196,7 +147,7 @@ const LoginPage = ({ setUser }) => {
           <ButtonGroup>
             <LoadingButton 
               type="submit"
-              isLoading={isLoading}
+              isLoading={isLoggingIn}
               loadingText="Logging in..."
               style={{ flex: 1 }}
             >
@@ -206,7 +157,7 @@ const LoginPage = ({ setUser }) => {
               type="button"
               onClick={() => navigate('/register')} 
               $variant="secondary"
-              disabled={isLoading}
+              disabled={isLoggingIn}
               style={{ flex: 1 }}
             >
               Register
@@ -216,10 +167,6 @@ const LoginPage = ({ setUser }) => {
       </LoginCard>
     </LoginContainer>
   );
-};
-
-LoginPage.propTypes = {
-  setUser: PropTypes.func.isRequired
 };
 
 export default LoginPage;

@@ -1,9 +1,8 @@
 import PropTypes from 'prop-types';
 import { useEffect, useState } from 'react';
-import { useNavigate } from 'react-router-dom';
 import styled from 'styled-components';
-import { removeToken } from '../utils/auth';
-import api from '../utils/axios';
+import { useAuth } from '../contexts/AuthContext';
+import { refreshToken } from '../utils/auth';
 
 const AlertContainer = styled.div`
   position: fixed;
@@ -42,21 +41,50 @@ const AlertButton = styled.button`
 const TokenExpirationAlert = ({ warningTime = 5 * 60 * 1000 }) => {
   const [showAlert, setShowAlert] = useState(false);
   const [timeLeft, setTimeLeft] = useState(null);
-  const navigate = useNavigate();
+  const { isAuthenticated, logout, checkAuth } = useAuth();
+
+  // Extract JWT expiration time from cookies if available
+  const getTokenExpiryTime = () => {
+    try {
+      // Try to get token from cookie
+      const cookieString = document.cookie;
+      const tokenCookie = cookieString
+        .split(';')
+        .find(row => row.trim().startsWith('token='));
+      
+      if (!tokenCookie) return null;
+      
+      // Extract token part
+      const token = tokenCookie.split('=')[1];
+      if (!token) return null;
+      
+      // Parse JWT payload
+      const base64Url = token.split('.')[1];
+      const base64 = base64Url.replace(/-/g, '+').replace(/_/g, '/');
+      const payload = JSON.parse(window.atob(base64));
+      
+      if (payload.exp) {
+        return payload.exp * 1000; // Convert to milliseconds
+      }
+      
+      return null;
+    } catch (error) {
+      console.error('Error extracting token expiry:', error);
+      return null;
+    }
+  };
 
   useEffect(() => {
     let checkTimer;
     let countdownTimer;
 
-    // Check token status every minute
-    const checkTokenStatus = async () => {
-      try {
-        // Call a lightweight endpoint to check token status
-        const response = await api.get('/users/me');
+    // Only set up timers if authenticated
+    if (isAuthenticated) {
+      // Check token expiration every minute
+      checkTimer = setInterval(() => {
+        const expiryTime = getTokenExpiryTime();
         
-        // If response has token info, check expiration
-        if (response.headers['x-token-expiry']) {
-          const expiryTime = parseInt(response.headers['x-token-expiry']);
+        if (expiryTime) {
           const currentTime = Date.now();
           const timeToExpiry = expiryTime - currentTime;
           
@@ -64,24 +92,27 @@ const TokenExpirationAlert = ({ warningTime = 5 * 60 * 1000 }) => {
           if (timeToExpiry > 0 && timeToExpiry <= warningTime) {
             setShowAlert(true);
             setTimeLeft(Math.floor(timeToExpiry / 1000)); // Convert to seconds
+          } else if (timeToExpiry <= 0) {
+            // Token has expired, trigger logout
+            logout();
           } else {
             setShowAlert(false);
           }
         }
-      } catch (error) {
-        // If request fails with 401, token has expired
-        if (error.response?.status === 401) {
-          removeToken();
-          navigate('/');
+      }, 60000); // Check every minute
+      
+      // Initial check
+      const expiryTime = getTokenExpiryTime();
+      if (expiryTime) {
+        const currentTime = Date.now();
+        const timeToExpiry = expiryTime - currentTime;
+        
+        if (timeToExpiry > 0 && timeToExpiry <= warningTime) {
+          setShowAlert(true);
+          setTimeLeft(Math.floor(timeToExpiry / 1000));
         }
       }
-    };
-
-    // Start interval to check token
-    checkTimer = setInterval(checkTokenStatus, 60000); // Check every minute
-    
-    // Initial check
-    checkTokenStatus();
+    }
 
     // Update countdown if alert is showing
     if (showAlert && timeLeft) {
@@ -89,8 +120,7 @@ const TokenExpirationAlert = ({ warningTime = 5 * 60 * 1000 }) => {
         setTimeLeft(prev => {
           if (prev <= 1) {
             clearInterval(countdownTimer);
-            removeToken();
-            navigate('/');
+            logout();
             return 0;
           }
           return prev - 1;
@@ -102,30 +132,26 @@ const TokenExpirationAlert = ({ warningTime = 5 * 60 * 1000 }) => {
       clearInterval(checkTimer);
       if (countdownTimer) clearInterval(countdownTimer);
     };
-  }, [navigate, showAlert, timeLeft, warningTime]);
+  }, [isAuthenticated, logout, showAlert, timeLeft, warningTime]);
 
   const handleStayLoggedIn = async () => {
     try {
-      await api.post('/users/refresh-token');
+      await refreshToken();
+      await checkAuth(true); // Silently check auth to update context
       setShowAlert(false);
     } catch (error) {
       console.error('Error refreshing token:', error);
-      handleLogout(); // If refresh fails, log out
+      logout(); // If refresh fails, log out
     }
   };
 
-  const handleLogout = () => {
-    removeToken();
-    navigate('/');
-  };
-
-  if (!showAlert) return null;
+  if (!showAlert || !isAuthenticated) return null;
 
   return (
     <AlertContainer visible={showAlert}>
       Your session will expire in {Math.floor(timeLeft / 60)}:{(timeLeft % 60).toString().padStart(2, '0')}
       <AlertButton onClick={handleStayLoggedIn}>Stay logged in</AlertButton>
-      <AlertButton onClick={handleLogout}>Logout</AlertButton>
+      <AlertButton onClick={logout}>Logout</AlertButton>
     </AlertContainer>
   );
 };
