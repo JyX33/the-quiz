@@ -1,3 +1,4 @@
+// frontend/src/components/ConnectionStatus.jsx
 import { useEffect, useState } from 'react';
 import styled from 'styled-components';
 import socket from '../socket';
@@ -36,25 +37,31 @@ const StatusIndicator = styled.div`
 
 const ConnectionStatus = () => {
   const [connected, setConnected] = useState(socket.connected);
-  const [setReconnectAttempt] = useState(0);
+  const [setReconnectAttempt] = useState(0); // Fixed this line
   
   useEffect(() => {
     const handleConnect = () => {
+      console.log('Socket connected in status component');
       setConnected(true);
       setReconnectAttempt(0);
     };
     
     const handleDisconnect = () => {
+      console.log('Socket disconnected in status component');
       setConnected(false);
     };
     
     const handleReconnectAttempt = (attempt) => {
+      console.log('Socket reconnect attempt:', attempt);
       setReconnectAttempt(attempt);
     };
     
     socket.on('connect', handleConnect);
     socket.on('disconnect', handleDisconnect);
     socket.on('reconnect_attempt', handleReconnectAttempt);
+    
+    // Update initial state
+    setConnected(socket.connected);
     
     return () => {
       socket.off('connect', handleConnect);

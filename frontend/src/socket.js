@@ -1,11 +1,27 @@
+// frontend/src/socket.js
 import { io } from 'socket.io-client';
 import { refreshToken } from './utils/auth';
 
-// Initialize socket
+// Get token from cookie before initializing socket
+const getTokenFromCookie = () => {
+  return document.cookie.replace(/(?:(?:^|.*;\s*)token\s*=\s*([^;]*).*$)|^.*$/, "$1") || null;
+};
+
+// Initialize socket with auto-connect disabled to setup auth first
 const socket = io('http://localhost:5000', {
-  autoConnect: false,
+  autoConnect: false, // Keep disabled until we set auth
   withCredentials: true, // Important for cookies
 });
+
+// Set auth token before connecting
+const token = getTokenFromCookie();
+if (token) {
+  console.log('Setting auth token before connect');
+  socket.auth = { token };
+}
+
+// Now connect
+socket.connect();
 
 // Handle connection errors
 socket.on('connect_error', async (error) => {
@@ -15,6 +31,7 @@ socket.on('connect_error', async (error) => {
     // Try to refresh the token and reconnect
     const refreshed = await refreshToken();
     if (refreshed) {
+      socket.auth = { token: document.cookie.replace(/(?:(?:^|.*;\s*)token\s*=\s*([^;]*).*$)|^.*$/, "$1") }; 
       socket.connect();
     } else {
       // Redirect to login if token refresh fails
@@ -23,9 +40,22 @@ socket.on('connect_error', async (error) => {
   }
 });
 
+// Log successful connection
+socket.on('connect', () => {
+  console.log('Socket connected successfully');
+});
+
 // Connect socket when needed
 export const connectSocket = () => {
   if (!socket.connected) {
+    // Set the auth token from cookie
+    const token = getTokenFromCookie();
+    if (token) {
+      console.log('Refreshing auth token before reconnect');
+      // Need to disconnect to update auth
+      socket.disconnect();
+      socket.auth = { token };
+    }
     socket.connect();
   }
 };

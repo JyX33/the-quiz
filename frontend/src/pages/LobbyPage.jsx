@@ -1,16 +1,16 @@
-import { useState, useEffect, useRef } from 'react';
-import { useParams, useNavigate } from 'react-router-dom';
-import styled, { keyframes, css } from 'styled-components';
+import { useEffect, useRef, useState } from 'react';
+import { useNavigate, useParams } from 'react-router-dom';
+import styled, { css, keyframes } from 'styled-components';
 import Form from '../components/shared/Form';
-import socket from '../socket';
 import {
+  Button,
+  Card,
+  Input,
   PageContainer,
   Title,
-  Button,
-  Input,
-  Card,
 } from '../components/shared/StyledComponents';
 import { useAuth } from '../contexts/AuthContext';
+import socket from '../socket';
 
 const pulse = keyframes`
   0% { transform: scale(1); }
@@ -139,58 +139,158 @@ const StartButton = styled(Button)`
     position: absolute;
     top: 0;
     left: 0;
-  width: ${({ $progress }) => $progress}%;
+    width: ${({ $progress }) => $progress}%;
     height: 100%;
     background: ${({ theme }) => `${theme.background.accent}22`};
     transition: width 1s linear;
   }
 `;
 
+const ErrorDisplay = styled.div`
+  color: ${({ theme }) => theme.error};
+  background: ${({ theme }) => theme.error + '11'};
+  padding: ${({ theme }) => theme.spacing.md};
+  border-radius: ${({ theme }) => theme.borderRadius};
+  margin-bottom: ${({ theme }) => theme.spacing.md};
+`;
+
 const LobbyPage = () => {
   const { sessionId } = useParams();
-  const [players, setPlayers] = useState([]); // Now stores {id, username} objects
+  const [players, setPlayers] = useState([]); 
   const [messages, setMessages] = useState([]);
   const [messageInput, setMessageInput] = useState('');
   const [countdown, setCountdown] = useState(null);
   const [startProgress, setStartProgress] = useState(0);
   const [error, setError] = useState('');
+  const [socketIsConnected, setSocketIsConnected] = useState(socket.connected);
   
   const chatRef = useRef(null);
   const navigate = useNavigate();
   const { user } = useAuth();
 
+  // Setup and teardown socket connection
+  useEffect(() => {
+    const handleConnect = () => {
+      console.log('Socket connected in lobby');
+      setSocketIsConnected(true);
+    };
+    
+    const handleDisconnect = () => {
+      console.log('Socket disconnected in lobby');
+      setSocketIsConnected(false);
+    };
+    
+    socket.on('connect', handleConnect);
+    socket.on('disconnect', handleDisconnect);
+    
+    // Check initial status
+    setSocketIsConnected(socket.connected);
+    
+    return () => {
+      socket.off('connect', handleConnect);
+      socket.off('disconnect', handleDisconnect);
+    };
+  }, []);
+
+  // Handle session joining
   useEffect(() => {
     if (!user || !sessionId) return;
     
-    socket.emit('joinSession', { sessionId });
+    console.log('Setting up lobby with session ID:', sessionId);
     
-    socket.on('playerJoined', (players) => {
-      setPlayers(players);
-      addMessage('System', `${players[players.length - 1].username} has joined the lobby`);
-    });
+    // Function to join the session
+    const joinCurrentSession = () => {
+      console.log('Joining session:', sessionId, 'User:', user);
+      socket.emit('joinSession', { sessionId });
+      
+      // Add an initial system message
+      addMessage('System', 'Joining lobby...');
+    };
     
-    socket.on('playerLeft', (players) => {
-      setPlayers(players);
+    // Make sure we're connected before joining
+    if (socket.connected) {
+      console.log('Socket already connected, joining session directly');
+      joinCurrentSession();
+    } else {
+      console.log('Socket not connected, waiting for connection');
+      socket.connect();
+      
+      // Wait for connection before joining
+      const connectHandler = () => {
+        console.log('Connected in event handler, now joining session');
+        joinCurrentSession();
+      };
+      
+      socket.once('connect', connectHandler);
+      
+      return () => {
+        socket.off('connect', connectHandler);
+      };
+    }
+    
+    // Set up event handlers
+    const playerJoinedHandler = (updatedPlayers) => {
+      console.log('Player joined event received:', updatedPlayers);
+      setPlayers(updatedPlayers);
+      
+      // Check if there's a new player to announce
+      const lastPlayer = updatedPlayers[updatedPlayers.length - 1];
+      if (lastPlayer) {
+        addMessage('System', `${lastPlayer.username} has joined the lobby`);
+      }
+    };
+    
+    const playerLeftHandler = (updatedPlayers) => {
+      console.log('Player left event received:', updatedPlayers);
+      setPlayers(updatedPlayers);
       addMessage('System', `A player has left the lobby`);
-    });
+    };
     
-    socket.on('chatMessage', ({ username, message }) => {
+    const chatMessageHandler = ({ username, message }) => {
       addMessage(username, message);
+    };
+    
+    const quizStartingHandler = (count) => {
+      setCountdown(count);
+    };
+    
+    const quizStartedHandler = () => {
+      navigate(`/quiz/${sessionId}`);
+    };
+    
+    const errorHandler = (errorMessage) => {
+      console.error('Socket error:', errorMessage);
+      setError(`Error: ${errorMessage}`);
+      addMessage('System', `Error: ${errorMessage}`);
+    };
+    
+    // Register all event handlers
+    socket.on('playerJoined', playerJoinedHandler);
+    socket.on('playerLeft', playerLeftHandler);
+    socket.on('chatMessage', chatMessageHandler);
+    socket.on('quizStarting', quizStartingHandler);
+    socket.on('quizStarted', quizStartedHandler);
+    socket.on('error', errorHandler);
+    
+    // Debug
+    socket.onAny((event, ...args) => {
+      console.log(`Debug: Socket event received: ${event}`, args);
     });
     
-    socket.on('quizStarting', (count) => setCountdown(count));
-    
-    socket.on('quizStarted', () => navigate(`/quiz/${sessionId}`));
-
+    // Clean up event handlers
     return () => {
-      socket.off('playerJoined');
-      socket.off('playerLeft');
-      socket.off('chatMessage');
-      socket.off('quizStarting');
-      socket.off('quizStarted');
+      console.log('Cleaning up socket event handlers');
+      socket.off('playerJoined', playerJoinedHandler);
+      socket.off('playerLeft', playerLeftHandler);
+      socket.off('chatMessage', chatMessageHandler);
+      socket.off('quizStarting', quizStartingHandler);
+      socket.off('quizStarted', quizStartedHandler);
+      socket.off('error', errorHandler);
+      socket.offAny();
     };
   }, [sessionId, navigate, user]);
 
+  // Auto-scroll chat to bottom when messages change
   useEffect(() => {
     if (chatRef.current) {
       chatRef.current.scrollTop = chatRef.current.scrollHeight;
@@ -236,40 +336,58 @@ const LobbyPage = () => {
   return (
     <PageContainer>
       <Title>Waiting Room</Title>
+      
+      {!socketIsConnected && (
+        <ErrorDisplay>
+          Socket is currently disconnected. Try refreshing the page.
+        </ErrorDisplay>
+      )}
+      
+      {error && (
+        <ErrorDisplay>
+          {error}
+        </ErrorDisplay>
+      )}
+      
       <LobbyCard>
         <div>
           <h2>Players ({players.length})</h2>
           <PlayerGrid>
-            {players.map((player) => (
-              <PlayerCard
-                key={player.id}
-                $isHost={players[0]?.id === player.id}
-                $isNew={player === players[players.length - 1]}
-              >
-                <Avatar>
-                  {player.username.charAt(0).toUpperCase()}
-                </Avatar>
-                <PlayerInfo>
-                  <PlayerName>
-                    {player.id === user.id ? `${player.username} (You)` : player.username}
-                  </PlayerName>
-                  <PlayerStatus>
-                    {player.id === players[0]?.id ? 'Host' : 'Ready'}
-                  </PlayerStatus>
-                </PlayerInfo>
-              </PlayerCard>
-            ))}
+            {players.length === 0 ? (
+              <p>No players have joined yet. {socketIsConnected ? 'Waiting for players...' : 'Socket disconnected.'}</p>
+            ) : (
+              players.map((player) => (
+                <PlayerCard
+                  key={player.id}
+                  $isHost={players[0]?.id === player.id}
+                  $isNew={player === players[players.length - 1]}
+                >
+                  <Avatar>
+                    {player.username.charAt(0).toUpperCase()}
+                  </Avatar>
+                  <PlayerInfo>
+                    <PlayerName>
+                      {player.id === user.id ? `${player.username} (You)` : player.username}
+                    </PlayerName>
+                    <PlayerStatus>
+                      {player.id === players[0]?.id ? 'Host' : 'Ready'}
+                    </PlayerStatus>
+                  </PlayerInfo>
+                </PlayerCard>
+              ))
+            )}
           </PlayerGrid>
           
           {isHost && (
             <StartButton 
               onClick={startQuiz}
-              disabled={players.length < 2 || countdown !== null}
+              disabled={players.length < 2 || countdown !== null || !socketIsConnected}
               $progress={startProgress}
             >
-              {players.length < 2
-                ? 'Waiting for more players...'
-                : 'Start Quiz'}
+              {!socketIsConnected ? 'Waiting for connection...' :
+                players.length < 2
+                  ? 'Waiting for more players...'
+                  : 'Start Quiz'}
             </StartButton>
           )}
           <Button onClick={() => leaveSession()} $variant="secondary">
@@ -292,6 +410,7 @@ const LobbyPage = () => {
               value={messageInput}
               onChange={(e) => setMessageInput(e.target.value)}
               placeholder="Type a message..."
+              disabled={!socketIsConnected}
             />
           </Form>
         </ChatSection>

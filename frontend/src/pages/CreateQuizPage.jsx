@@ -11,7 +11,6 @@ import {
   QuestionContainer,
   Title,
 } from '../components/shared/StyledComponents';
-import { useAuth } from '../contexts/AuthContext';
 import { validateOptions, validateQuestion, validateQuizTitle } from '../utils/validation';
 import LoadingButton from '../components/shared/LoadingButton';
 import { executeAsync } from '../utils/asyncUtils';
@@ -43,7 +42,6 @@ const CreateQuizPage = () => {
   const [createdQuizId, setCreatedQuizId] = useState(null);
   const [sessionCreationFailed, setSessionCreationFailed] = useState(false);
   
-  const { isAuthenticated } = useAuth();
   const navigate = useNavigate();
 
   // Automatically refresh CSRF token on component load
