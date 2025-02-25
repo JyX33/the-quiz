@@ -69,7 +69,10 @@ const LoginPage = ({ setUser }) => {
     return true;
   };
 
-  const handleLogin = async () => {
+  const handleLogin = async (e) => {
+    // Prevent default form submission behavior
+    if (e) e.preventDefault();
+    
     if (!validateForm()) return;
 
     setError('');
@@ -98,60 +101,57 @@ const LoginPage = ({ setUser }) => {
     }
   };
 
-  const handleKeyPress = (e) => {
-    if (e.key === 'Enter') {
-      handleLogin();
-    }
-  };
-
   return (
     <LoginContainer>
       <LoginCard>
         <Title>Welcome Back</Title>
         
-        <FormInput
-          id="username"
-          label="Username"
-          value={username}
-          onChange={setUsername}
-          onKeyPress={handleKeyPress}
-          validator={validateUsername}
-          disabled={isLoading}
-          required
-        />
-
-        <FormInput
-          id="password"
-          label="Password"
-          type="password"
-          value={password}
-          onChange={setPassword}
-          onKeyPress={handleKeyPress}
-          validator={validatePassword}
-          disabled={isLoading}
-          required
-        />
-
-        {error && <ErrorMessage>{error}</ErrorMessage>}
-
-        <ButtonGroup>
-          <LoadingButton 
-            isLoading={isLoading}
-            loadingText="Logging in..."
-            onClick={handleLogin}
-            style={{ flex: 1 }}
-          >
-            Login
-          </LoadingButton>
-          <LoadingButton 
-            onClick={() => navigate('/register')} 
-            $variant="secondary"
+        {/* Wrap inputs in a form element and add onSubmit handler */}
+        <form onSubmit={handleLogin}>
+          <FormInput
+            id="username"
+            label="Username"
+            value={username}
+            onChange={setUsername}
+            validator={validateUsername}
             disabled={isLoading}
-            style={{ flex: 1 }}
-          >
-            Register
-          </LoadingButton>
-        </ButtonGroup>
+            required
+          />
+
+          <FormInput
+            id="password"
+            label="Password"
+            type="password"
+            value={password}
+            onChange={setPassword}
+            validator={validatePassword}
+            disabled={isLoading}
+            required
+          />
+
+          {error && <ErrorMessage>{error}</ErrorMessage>}
+
+          <ButtonGroup>
+            <LoadingButton 
+              type="submit"
+              isLoading={isLoading}
+              loadingText="Logging in..."
+              onClick={null}
+              style={{ flex: 1 }}
+            >
+              Login
+            </LoadingButton>
+            <LoadingButton 
+              type="button"
+              onClick={() => navigate('/register')} 
+              $variant="secondary"
+              disabled={isLoading}
+              style={{ flex: 1 }}
+            >
+              Register
+            </LoadingButton>
+          </ButtonGroup>
+        </form>
       </LoginCard>
     </LoginContainer>
   );

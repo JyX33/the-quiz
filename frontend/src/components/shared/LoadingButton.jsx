@@ -22,11 +22,16 @@ const Spinner = styled.div`
 const LoadingButton = ({ 
   isLoading, 
   loadingText = 'Loading...', 
-  children, 
+  children,
+  type = 'button',
   ...props 
 }) => {
   return (
-    <Button {...props} disabled={isLoading || props.disabled}>
+    <Button 
+      type={type} 
+      {...props} 
+      disabled={isLoading || props.disabled}
+    >
       {isLoading ? (
         <>
           <Spinner />
@@ -42,6 +47,7 @@ LoadingButton.propTypes = {
   loadingText: PropTypes.string,
   children: PropTypes.node.isRequired,
   disabled: PropTypes.bool,
+  type: PropTypes.string,
 };
 
 export default LoadingButton;

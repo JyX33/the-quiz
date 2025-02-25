@@ -1,4 +1,3 @@
-import api from '../utils/axios';
 import { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import styled from 'styled-components';
@@ -9,6 +8,7 @@ import {
   PageContainer,
   Title,
 } from '../components/shared/StyledComponents';
+import api from '../utils/axios';
 import { handleApiError } from '../utils/errorHandler';
 import { validatePassword, validatePasswordConfirmation, validateUsername } from '../utils/validation';
 
@@ -139,7 +139,10 @@ const RegisterPage = () => {
     return true;
   };
 
-  const handleRegister = async () => {
+  const handleRegister = async (e) => {
+    // Prevent default form submission
+    if (e) e.preventDefault();
+    
     if (!validateForm()) return;
 
     setError('');
@@ -156,72 +159,65 @@ const RegisterPage = () => {
     }
   };
 
-  const handleKeyPress = (e) => {
-    if (e.key === 'Enter') {
-      handleRegister();
-    }
-  };
-
   return (
     <RegisterContainer>
       <RegisterCard>
         <Title>Create Account</Title>
-
-        <FormInput
-          id="username"
-          label="Username"
-          value={username}
-          onChange={setUsername}
-          onKeyPress={handleKeyPress}
-          validator={validateUsername}
-          disabled={isLoading}
-          required
-        />
-
-        <div>
+        
+        <form onSubmit={handleRegister}>
           <FormInput
-            id="password"
-            label="Password"
-            type="password"
-            value={password}
-            onChange={setPassword}
-            onKeyPress={handleKeyPress}
-            validator={validatePassword}
+            id="username"
+            label="Username"
+            value={username}
+            onChange={setUsername}
+            validator={validateUsername}
             disabled={isLoading}
             required
           />
-          <PasswordStrengthMeter>
-            <PasswordStrengthBar strength={getPasswordStrength()} />
-          </PasswordStrengthMeter>
-          <PasswordRequirements>
-            {passwordRequirements.map((req, index) => (
-              <Requirement key={index} met={req.test(password)}>
-                {req.text}
-              </Requirement>
-            ))}
-          </PasswordRequirements>
-        </div>
 
-        <FormInput
-          id="confirm-password"
-          label="Confirm Password"
-          type="password"
-          value={confirmPassword}
-          onChange={setConfirmPassword}
-          onKeyPress={handleKeyPress}
-          validator={(value) => validatePasswordConfirmation(password, value)}
-          disabled={isLoading}
-          required
-        />
+          <div>
+            <FormInput
+              id="password"
+              label="Password"
+              type="password"
+              value={password}
+              onChange={setPassword}
+              validator={validatePassword}
+              disabled={isLoading}
+              required
+            />
+            <PasswordStrengthMeter>
+              <PasswordStrengthBar strength={getPasswordStrength()} />
+            </PasswordStrengthMeter>
+            <PasswordRequirements>
+              {passwordRequirements.map((req, index) => (
+                <Requirement key={index} met={req.test(password)}>
+                  {req.text}
+                </Requirement>
+              ))}
+            </PasswordRequirements>
+          </div>
 
-        {error && <ErrorMessage>{error}</ErrorMessage>}
+          <FormInput
+            id="confirm-password"
+            label="Confirm Password"
+            type="password"
+            value={confirmPassword}
+            onChange={setConfirmPassword}
+            validator={(value) => validatePasswordConfirmation(password, value)}
+            disabled={isLoading}
+            required
+          />
 
-        <Button 
-          onClick={handleRegister}
-          disabled={isLoading}
-        >
-          {isLoading ? 'Creating account...' : 'Register'}
-        </Button>
+          {error && <ErrorMessage>{error}</ErrorMessage>}
+
+          <Button 
+            type="submit"
+            disabled={isLoading}
+          >
+            {isLoading ? 'Creating account...' : 'Register'}
+          </Button>
+        </form>
 
         <BackToLogin onClick={() => navigate('/')}>
           Already have an account? Login

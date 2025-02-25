@@ -98,9 +98,12 @@ const FormInput = ({
         placeholder={placeholder}
         $error={!!error}
         required={required}
+        name={id} // Add name attribute for better accessibility
+        aria-invalid={!!error} // Add aria-invalid for accessibility
+        aria-describedby={error ? `${id}-error` : undefined} // Link to error message
         {...props}
       />
-      <ErrorMessage>{error}</ErrorMessage>
+      <ErrorMessage id={`${id}-error`}>{error}</ErrorMessage>
     </InputContainer>
   );
 };
