@@ -10,8 +10,8 @@ import {
   PageContainer,
   Title,
 } from '../components/shared/StyledComponents';
-import { handleApiError } from '../utils/errorHandler';
 import { validatePassword, validatePasswordConfirmation, validateUsername } from '../utils/validation';
+import { executeAsync} from '../utils/asyncUtils';
 
 const RegisterContainer = styled(PageContainer)`
   display: flex;
@@ -83,7 +83,7 @@ const BackToLogin = styled.button`
 `;
 
 /**
- * RegisterPage component with standardized form submission
+ * RegisterPage component with standardized async patterns
  */
 const RegisterPage = () => {
   const [username, setUsername] = useState('');
@@ -97,7 +97,11 @@ const RegisterPage = () => {
 
   // Refresh CSRF token on component mount
   useEffect(() => {
-    refreshCsrfToken();
+    return safeAsyncEffect(
+      () => refreshCsrfToken(),
+      () => {}, // No action needed on success
+      (error) => console.error('Failed to refresh CSRF token:', error)
+    );
   }, []);
 
   // Handle redirect countdown
@@ -161,28 +165,28 @@ const RegisterPage = () => {
       return;
     }
 
-    setError('');
-    setSuccess('');
-    setIsLoading(true);
-
-    try {
-      // Make sure we have a fresh CSRF token
-      await refreshCsrfToken();
-      
-      // Perform registration
-      await api.post('/users/register', { 
-        username, 
-        password 
-      });
-      
-      // Show success message and start redirect countdown
-      setSuccess('Account created successfully! Redirecting to login in 3 seconds...');
-      setRedirectCountdown(3);
-    } catch (error) {
-      handleApiError(error, setError);
-    } finally {
-      setIsLoading(false);
-    }
+    // Use standardized executeAsync utility
+    await executeAsync(
+      async () => {
+        // Refresh CSRF token first
+        await refreshCsrfToken();
+        
+        // Perform registration
+        return await api.post('/users/register', { 
+          username, 
+          password 
+        });
+      },
+      setIsLoading,
+      setError,
+      setSuccess,
+      {
+        onSuccess: () => {
+          setSuccess('Account created successfully! Redirecting to login in 3 seconds...');
+          setRedirectCountdown(3);
+        }
+      }
+    );
   };
 
   return (

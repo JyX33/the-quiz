@@ -11,9 +11,10 @@ import {
   QuestionContainer,
   Title,
 } from '../components/shared/StyledComponents';
-import { handleApiError } from '../utils/errorHandler';
+import { useAuth } from '../contexts/AuthContext';
 import { validateOptions, validateQuestion, validateQuizTitle } from '../utils/validation';
 import LoadingButton from '../components/shared/LoadingButton';
+import { executeAsync } from '../utils/asyncUtils';
 
 const QuizCreationContainer = styled(PageContainer)`
   max-width: 800px;
@@ -28,10 +29,7 @@ const RecoveryOptions = styled.div`
 `;
 
 /**
- * CreateQuizPage component with improved transaction handling
- * - Ensures both quiz creation and session creation succeed or both fail
- * - Provides recovery options if one part of the transaction fails
- * - Uses consistent form submission patterns
+ * CreateQuizPage component with standardized async patterns
  */
 const CreateQuizPage = () => {
   const [questions, setQuestions] = useState([{ question: '', options: ['', '', '', ''], correctAnswer: '' }]);
@@ -45,11 +43,14 @@ const CreateQuizPage = () => {
   const [createdQuizId, setCreatedQuizId] = useState(null);
   const [sessionCreationFailed, setSessionCreationFailed] = useState(false);
   
+  const { isAuthenticated } = useAuth();
   const navigate = useNavigate();
 
   // Automatically refresh CSRF token on component load
   useEffect(() => {
-    refreshCsrfToken();
+    refreshCsrfToken().catch(err => 
+      console.error('Failed to refresh CSRF token:', err)
+    );
   }, []);
 
   const addQuestion = () => {
@@ -122,53 +123,65 @@ const CreateQuizPage = () => {
       return;
     }
     
-    setIsLoading(true);
-    setError('');
-    setSuccess('');
-    setWarning('');
     setCreatedQuizId(null);
     setSessionCreationFailed(false);
     
-    try {
-      // Make sure we have a fresh CSRF token
-      await refreshCsrfToken();
-      
-      // Step 1: Create quiz
-      const quizResponse = await api.post(
-        '/quizzes',
-        { title, questions, category, difficulty }
-      );
-      
-      const quizId = quizResponse.data.quizId;
-      setCreatedQuizId(quizId);
-      
-      try {
-        // Step 2: Create session
-        const sessionResponse = await api.post(
-          '/sessions',
-          { quizId }
+    // Use standardized executeAsync for quiz creation 
+    const quizResult = await executeAsync(
+      async () => {
+        // Refresh CSRF token first
+        await refreshCsrfToken();
+        
+        // Create quiz
+        const response = await api.post(
+          '/quizzes',
+          { title, questions, category, difficulty }
         );
         
-        // Success - both operations completed
-        setSuccess('Quiz and session created successfully!');
-        
-        // Delay navigation slightly to show success message
-        setTimeout(() => {
-          navigate(`/lobby/${sessionResponse.data.sessionId}`);
-        }, 1000);
-      } catch (sessionError) {
-        // First part succeeded but second failed
+        return response.data;
+      },
+      setIsLoading,
+      setError,
+      null, // No success message yet
+      (data) => {
+        setCreatedQuizId(data.quizId);
+      }
+    );
+    
+    // If quiz creation succeeded, try to create session
+    if (quizResult && quizResult.quizId) {
+      // Try to create session with the new quiz
+      const sessionResult = await executeAsync(
+        async () => {
+          // Create session using the quiz ID
+          const response = await api.post(
+            '/sessions',
+            { quizId: quizResult.quizId }
+          );
+          
+          return response.data;
+        },
+        setIsLoading,
+        setError,
+        setSuccess,
+        (data) => {
+          setSuccess('Quiz and session created successfully!');
+          
+          // Delay navigation slightly to show success message
+          setTimeout(() => {
+            navigate(`/lobby/${data.sessionId}`);
+          }, 1000);
+        }
+      );
+      
+      // If session creation failed but no error was set, make sure we show session failure UI
+      if (!sessionResult && !error) {
         setSessionCreationFailed(true);
         setWarning(
           'Quiz was created successfully, but we encountered an issue creating the session. ' +
           'You can try to create a session again or manage your quiz later.'
         );
-        console.error('Session creation error:', sessionError);
       }
-    } catch (error) {
-      handleApiError(error, setError);
-    } finally {
-      setIsLoading(false);
     }
   };
 
@@ -178,31 +191,32 @@ const CreateQuizPage = () => {
   const handleRetryCreateSession = async () => {
     if (!createdQuizId) return;
     
-    setIsLoading(true);
-    setError('');
-    setWarning('');
-    
-    try {
-      // Fresh CSRF token
-      await refreshCsrfToken();
-      
-      // Try to create session again
-      const sessionResponse = await api.post(
-        '/sessions',
-        { quizId: createdQuizId }
-      );
-      
-      setSuccess('Session created successfully!');
-      
-      // Navigate to lobby
-      setTimeout(() => {
-        navigate(`/lobby/${sessionResponse.data.sessionId}`);
-      }, 1000);
-    } catch (error) {
-      handleApiError(error, setError);
-    } finally {
-      setIsLoading(false);
-    }
+    // Use standardized executeAsync utility
+    await executeAsync(
+      async () => {
+        // Refresh CSRF token first
+        await refreshCsrfToken();
+        
+        // Try to create session again
+        return await api.post(
+          '/sessions',
+          { quizId: createdQuizId }
+        );
+      },
+      setIsLoading,
+      setError,
+      setSuccess,
+      (response) => {
+        setSuccess('Session created successfully!');
+        setSessionCreationFailed(false);
+        setWarning('');
+        
+        // Navigate to lobby
+        setTimeout(() => {
+          navigate(`/lobby/${response.data.sessionId}`);
+        }, 1000);
+      }
+    );
   };
 
   /**

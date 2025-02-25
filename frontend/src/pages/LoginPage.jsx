@@ -14,6 +14,7 @@ import { validatePassword, validateUsername } from '../utils/validation';
 import { useAuth } from '../contexts/AuthContext';
 import LoadingSpinner from '../components/shared/LoadingSpinner';
 import { refreshCsrfToken } from '../utils/axios';
+import { executeAsync } from '../utils/asyncUtils';
 
 const LoginCard = styled(Card)`
   max-width: 400px;
@@ -49,7 +50,9 @@ const LoginPage = () => {
 
   // Refresh CSRF token on component mount
   useEffect(() => {
-    refreshCsrfToken();
+    refreshCsrfToken().catch(err => 
+      console.error('Failed to refresh CSRF token:', err)
+    );
   }, []);
 
   // Redirect if already authenticated
@@ -74,36 +77,33 @@ const LoginPage = () => {
     return { valid: true };
   };
 
-  const handleLogin = async (e) => {
+  const handleLogin = async () => {
     const validation = validateForm();
     if (!validation.valid) {
-      console.log(validation.error, e);
       setError(validation.error);
       return;
     }
 
-    setError('');
-    setIsLoggingIn(true);
-
-    try {
-      // Ensure fresh CSRF token
-      await refreshCsrfToken();
-      
-      // Use the login function from auth context
-      const result = await login(username, password);
-      
-      if (result.success) {
-        // Navigate on successful login
-        navigate('/home');
-      } else {
-        setError(result.error || 'Login failed');
-      }
-    } catch (error) {
-      setError('An unexpected error occurred during login');
-      console.error('Login error:', error);
-    } finally {
-      setIsLoggingIn(false);
-    }
+    // Use simplified executeAsync utility
+    await executeAsync(
+      async () => {
+        // First refresh CSRF token
+        await refreshCsrfToken();
+        
+        // Then perform login
+        const result = await login(username, password);
+        
+        if (!result.success) {
+          throw new Error(result.error || 'Login failed');
+        }
+        
+        return result;
+      },
+      setIsLoggingIn,
+      setError,
+      null,
+      () => navigate('/home')
+    );
   };
 
   // If we're checking auth, show loading spinner

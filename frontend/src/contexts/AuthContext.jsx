@@ -1,5 +1,5 @@
+import { createContext, useContext, useState, useEffect, useCallback } from 'react';
 import PropTypes from 'prop-types';
-import { createContext, useCallback, useContext, useEffect, useState } from 'react';
 import api from '../utils/axios';
 
 // Create context
@@ -36,6 +36,7 @@ export const AuthProvider = ({ children }) => {
         setIsAuthenticated(false);
       } else {
         // Network error or server error
+        console.error('Auth check error:', error);
         setAuthError(
           `Authentication service error: ${error.message || 'Unknown error'}`
         );
@@ -55,7 +56,6 @@ export const AuthProvider = ({ children }) => {
       await api.post('/users/logout');
       setUser(null);
       setIsAuthenticated(false);
-      // Navigation will happen in components that use this function
       return true;
     } catch (error) {
       console.error('Logout error:', error);
@@ -69,6 +69,7 @@ export const AuthProvider = ({ children }) => {
   // Login function - now without navigate
   const login = useCallback(async (username, password) => {
     setIsLoading(true);
+    
     try {
       const res = await api.post('/users/login', { username, password });
       
@@ -80,16 +81,26 @@ export const AuthProvider = ({ children }) => {
       } 
       // Otherwise, fetch user data separately
       else {
-        await checkAuth(true);
-        return { success: true, user: user };
+        try {
+          const userRes = await api.get('/users/me');
+          setUser(userRes.data);
+          setIsAuthenticated(true);
+          return { success: true, user: userRes.data };
+        } catch (userError) {
+          // If we can't get the user data, still return success but no user
+          console.error('Error fetching user after login:', userError);
+          return { success: true, user: null };
+        }
       }
     } catch (error) {
       let errorMessage = 'Login failed';
+      
       if (error.response?.data?.message) {
         errorMessage = error.response.data.message;
       } else if (error.message) {
         errorMessage = error.message;
       }
+      
       return { 
         success: false, 
         error: errorMessage 
@@ -97,7 +108,7 @@ export const AuthProvider = ({ children }) => {
     } finally {
       setIsLoading(false);
     }
-  }, [checkAuth, user]);
+  }, []);
 
   // Set up periodic auth check (every 5 minutes)
   useEffect(() => {
