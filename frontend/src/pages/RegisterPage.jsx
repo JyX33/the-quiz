@@ -97,10 +97,8 @@ const RegisterPage = () => {
 
   // Refresh CSRF token on component mount
   useEffect(() => {
-    return safeAsyncEffect(
-      () => refreshCsrfToken(),
-      () => {}, // No action needed on success
-      (error) => console.error('Failed to refresh CSRF token:', error)
+    refreshCsrfToken().catch(err => 
+      console.error('Failed to refresh CSRF token:', err)
     );
   }, []);
 
