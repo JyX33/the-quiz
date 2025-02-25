@@ -188,8 +188,8 @@ const runTransactionAsync = async (operations) => {
   }
 };
 
-// Initialize database
-initDb();
+// Don't initialize database here - moved to server.js
+// initDb();
 
-export { runTransaction, runTransactionAsync };
+export { runTransaction, runTransactionAsync, initDb };
 export default db;

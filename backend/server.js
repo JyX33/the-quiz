@@ -2,7 +2,7 @@
 if (process.env.NODE_ENV !== 'production') {
   try {
     const dotenv = await import('dotenv');
-    dotenv.config();
+    dotenv.default.config(); // Fix: Use .default.config() for ESM import
   } catch (error) {
     console.log('dotenv not available, using environment variables as is');
   }
@@ -15,8 +15,11 @@ import http from 'http';
 import morgan from 'morgan';
 import { Server } from 'socket.io';
 import config from './config/config.js';
-import { logger, stream } from './logger.js';
-import db from './models/db.js';
+import { logger, stream, initializeLogger } from './logger.js';
+import db, { initDb } from './models/db.js';
+
+// Initialize logger with db instance
+initializeLogger(db);
 
 // Import routes
 import quizRoutes from './routes/quizzes.js';
@@ -34,8 +37,6 @@ import { errorHandler, notFoundHandler } from './middleware/error.js';
 // Create Express app and HTTP server
 const app = express();
 const server = http.createServer(app);
-
-
 
 // Setup Morgan middleware with Winston stream
 app.use(morgan(config.logging.morganFormat, { stream }));
@@ -65,6 +66,8 @@ const corsOptions = {
 // Apply CORS to all routes
 app.use(cors(corsOptions));
 
+app.use(cookieParser()); // Add cookie-parser middleware before csrf
+
 // Create CSRF protection middleware
 const csrfProtection = csrf({
   cookie: {
@@ -73,8 +76,6 @@ const csrfProtection = csrf({
     sameSite: process.env.NODE_ENV === 'production' ? 'none' : 'lax'
   }
 });
-
-app.use(cookieParser()); // Add cookie-parser middleware
 
 // Apply to state-changing routes
 app.use('/api/users/login', csrfProtection);
@@ -135,9 +136,15 @@ const gracefulShutdown = async (signal) => {
   }, 5000); // 5 seconds timeout
 };
 
-// Start server
-server.listen(config.port, () => {
-  logger.info(`Server running on port ${config.port}`);
+// Initialize database before starting server
+initDb().then(() => {
+  // Start server
+  server.listen(config.port, () => {
+    logger.info(`Server running on port ${config.port}`);
+  });
+}).catch(err => {
+  logger.error('Failed to initialize database:', err);
+  process.exit(1);
 });
 
 // Handle process signals for graceful shutdown
