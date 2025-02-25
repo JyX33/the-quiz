@@ -55,15 +55,40 @@ const authenticateToken = (req, res, next) => {
 };
 
 const authenticateSocket = (socket, next) => {
-  // Try to get token from cookies first (if available), then fall back to auth property
-  const token = socket.handshake.auth.token;
-  
-  if (!token) {
-    logger.warn('Socket authentication failed: No token provided', {
+  try {
+    // Try different methods to get the token
+    const tokenFromAuth = socket.handshake.auth?.token;
+    const authHeader = socket.handshake.headers?.authorization || '';
+    let tokenFromHeader = null;
+    
+    // Extract Bearer token properly
+    if (authHeader.startsWith('Bearer ')) {
+      tokenFromHeader = authHeader.substring(7);
+    }
+    
+    const token = tokenFromAuth || tokenFromHeader;
+    
+    logger.debug('Socket auth attempt', {
       socketId: socket.id,
-      ip: socket.handshake.address
+      ip: socket.handshake.address,
+      hasAuthToken: !!tokenFromAuth,
+      hasHeaderToken: !!tokenFromHeader,
+      authHeader: authHeader ? `${authHeader.substr(0, 15)}...` : 'none' // Log partial header for debugging
     });
-    return next(new Error('Authentication required'));
+    
+    if (!token) {
+      logger.warn('Socket authentication failed: No token provided', {
+        socketId: socket.id,
+        ip: socket.handshake.address
+      });
+      return next(new Error('Authentication required'));
+    }
+  } catch (error) {
+    logger.error('Error in socket authentication processing:', {
+      error: error.message,
+      socketId: socket.id
+    });
+    return next(new Error('Authentication error'));
   }
 
   jwt.verify(token, config.jwtSecret, (err, user) => {

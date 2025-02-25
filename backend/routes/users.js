@@ -92,9 +92,17 @@ router.post('/login', asyncHandler(async (req, res, next) => {
     { expiresIn: '1h' }
   );
   
-  // Set token as HttpOnly cookie
+  // Set secure HttpOnly cookie for API authentication
   res.cookie('token', token, {
     httpOnly: true,
+    secure: process.env.NODE_ENV === 'production',
+    sameSite: 'strict',
+    maxAge: 3600000 // 1 hour in milliseconds
+  });
+  
+  // Also set a non-HttpOnly cookie for socket auth
+  res.cookie('socket_token', token, {
+    httpOnly: false, // Allow JavaScript access
     secure: process.env.NODE_ENV === 'production',
     sameSite: 'strict',
     maxAge: 3600000 // 1 hour in milliseconds
@@ -104,10 +112,11 @@ router.post('/login', asyncHandler(async (req, res, next) => {
     await logUserAction(user.id, 'login');
     logger.info('User logged in successfully:', { userId: user.id, username });
     
-    // Return user data but NOT the token in response body
-    res.json({ 
-      success: true, 
-      user: { id: user.id, username: user.username, theme: user.theme } 
+    // Return user data and socket token in response body
+    res.json({
+      success: true,
+      socket_token: token, // Include token for socket usage
+      user: { id: user.id, username: user.username, theme: user.theme }
     });
   } catch (error) {
     // Login succeeded but logging failed, continue anyway

@@ -2,7 +2,7 @@
 import { createContext, useContext, useState, useEffect, useCallback } from 'react';
 import PropTypes from 'prop-types';
 import api from '../utils/axios';
-import socket, { connectSocket, disconnectSocket } from '../socket'; // Import socket functions
+import { connectSocket, disconnectSocket } from '../socket'; // Import socket functions
 
 // Create context
 const AuthContext = createContext(null);
@@ -31,10 +31,10 @@ export const AuthProvider = ({ children }) => {
       setIsAuthenticated(true);
       setAuthError(null);
       
-      // Connect socket with authentication if not already connected
-      if (!socket.connected) {
-        connectSocket();
-      }
+      // Connect socket with authentication
+      // Pass the token directly to the connectSocket function
+      connectSocket();
+      console.log('Connected socket after successful authentication');
       
       return true;
     } catch (error) {
@@ -65,7 +65,11 @@ export const AuthProvider = ({ children }) => {
       await api.post('/users/logout');
       setUser(null);
       setIsAuthenticated(false);
-      disconnectSocket(); // Disconnect socket on logout
+      
+      // Clean up socket connection and token
+      disconnectSocket();
+      sessionStorage.removeItem('socket_token');
+      
       return true;
     } catch (error) {
       console.error('Logout error:', error);
@@ -87,16 +91,31 @@ export const AuthProvider = ({ children }) => {
       if (res.data.user) {
         setUser(res.data.user);
         setIsAuthenticated(true);
-        connectSocket(); // Connect socket after successful login
+        
+        // Store socket token in sessionStorage for socket auth
+        if (res.data.socket_token) {
+          sessionStorage.setItem('socket_token', res.data.socket_token);
+          // Connect socket with authentication after successful login
+          const socketConnected = connectSocket(res.data.socket_token);
+          console.log('Socket connection after login:', socketConnected ? 'successful' : 'failed');
+        } else {
+          console.error('No socket token received from server');
+        }
+        
         return { success: true, user: res.data.user };
-      } 
+      }
       // Otherwise, fetch user data separately
       else {
         try {
           const userRes = await api.get('/users/me');
           setUser(userRes.data);
           setIsAuthenticated(true);
-          connectSocket(); // Connect socket after successful login
+          
+          // Connect socket with authentication after successful login
+          const socketConnected = connectSocket();
+          console.log('Socket connection after login (alternative path):',
+                     socketConnected ? 'successful' : 'failed');
+          
           return { success: true, user: userRes.data };
         } catch (userError) {
           // If we can't get the user data, still return success but no user

@@ -45,13 +45,30 @@ app.use(morgan(config.logging.morganFormat, { stream }));
 logger.info('Server initialization started');
 logger.info(`Using JWT_SECRET from environment: ${process.env.JWT_SECRET ? 'Yes' : 'No, using default'}`);
 
-// Setup Socket.io
+// Setup Socket.io with enhanced cookie handling
 const io = new Server(server, {
   cors: {
     origin: config.corsOrigin,
     methods: config.socketMethods,
     credentials: true, // Allow cookies to be sent with requests
   },
+  allowEIO3: true, // Allow Engine.IO v3 client to connect
+  cookie: {
+    name: "io",
+    path: "/",
+    httpOnly: true,
+    sameSite: process.env.NODE_ENV === 'production' ? 'none' : 'lax',
+    secure: process.env.NODE_ENV === 'production'
+  }
+});
+
+// Log socket connection attempts to help debug issues
+io.engine.on("connection_error", (err) => {
+  logger.warn(`Socket.io connection error: ${err.code} - ${err.message}`, {
+    code: err.code,
+    message: err.message,
+    context: err.context
+  });
 });
 
 // Middleware
