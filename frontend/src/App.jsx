@@ -12,7 +12,6 @@ import LoginPage from './pages/LoginPage';
 import QuizRoomPage from './pages/QuizRoomPage';
 import RegisterPage from './pages/RegisterPage';
 import { allianceTheme, hordeTheme } from './styles/themes';
-import { getValidToken } from './utils/auth';
 import api from './utils/axios';
 import { handleApiError } from './utils/errorHandler';
 
@@ -24,36 +23,35 @@ function App() {
 
   useEffect(() => {
     // Check authentication status
-    api.get('/users/me')
-    .then((res) => {
-      setUser(res.data);
-      setTheme(res.data.theme === 'Horde' ? hordeTheme : allianceTheme);
-    })
-    .catch((err) => {
-      // Only show error if it's not a 401 (unauthenticated) error
-      if (err.response?.status !== 401) {
-        handleApiError(err, setError);
+    const checkAuth = async () => {
+      try {
+        const res = await api.get('/users/me');
+        setUser(res.data);
+        setTheme(res.data.theme === 'Horde' ? hordeTheme : allianceTheme);
+      } catch (err) {
+        // Only show error if it's not a 401 (unauthenticated) error
+        if (err.response?.status !== 401) {
+          handleApiError(err, setError);
+        }
+      } finally {
+        setIsLoading(false);
       }
-    })
-    .finally(() => setIsLoading(false));
+    };
+
+    checkAuth();
   }, []);
 
-  const updateTheme = (newTheme) => {
-    setTheme(newTheme === 'Horde' ? hordeTheme : allianceTheme);
-    const token = getValidToken();
-    if (token) {
-      api
-        .put('/users/me/theme', { theme: newTheme })
-        .then(() => {
-          setUser(prev => ({
-            ...prev,
-            theme: newTheme
-          }));
-        })
-        .catch((err) => {
-          console.error(err);
-          setError('Failed to update theme');
-        });
+  const updateTheme = async (newTheme) => {
+    try {
+      setTheme(newTheme === 'Horde' ? hordeTheme : allianceTheme);
+      await api.put('/users/me/theme', { theme: newTheme });
+      setUser(prev => ({
+        ...prev,
+        theme: newTheme
+      }));
+    } catch (err) {
+      console.error(err);
+      setError('Failed to update theme');
     }
   };
 
@@ -88,46 +86,46 @@ function App() {
         <Routes>
           <Route path="/" element={<LoginPage setUser={setUser} />} />
           <Route path="/register" element={<RegisterPage />} />
-        <Route 
-          path="/home" 
-          element={
-            <ProtectedRoute>
-              <HomePage user={user} updateTheme={updateTheme} />
-            </ProtectedRoute>
-          } 
-        />
-        <Route 
-          path="/lobby/:sessionId" 
-          element={
-            <ProtectedRoute>
-              <LobbyPage user={user} />
-            </ProtectedRoute>
-          } 
-        />
-        <Route 
-          path="/quiz/:sessionId" 
-          element={
-            <ProtectedRoute>
-              <QuizRoomPage user={user} />
-            </ProtectedRoute>
-          } 
-        />
-        <Route 
-          path="/create-quiz" 
-          element={
-            <ProtectedRoute>
-              <CreateQuizPage />
-            </ProtectedRoute>
-          } 
-        />
-        <Route 
-          path="/leaderboard" 
-          element={
-            <ProtectedRoute>
-              <LeaderboardPage />
-            </ProtectedRoute>
-          } 
-        />
+          <Route 
+            path="/home" 
+            element={
+              <ProtectedRoute>
+                <HomePage user={user} updateTheme={updateTheme} />
+              </ProtectedRoute>
+            } 
+          />
+          <Route 
+            path="/lobby/:sessionId" 
+            element={
+              <ProtectedRoute>
+                <LobbyPage user={user} />
+              </ProtectedRoute>
+            } 
+          />
+          <Route 
+            path="/quiz/:sessionId" 
+            element={
+              <ProtectedRoute>
+                <QuizRoomPage user={user} />
+              </ProtectedRoute>
+            } 
+          />
+          <Route 
+            path="/create-quiz" 
+            element={
+              <ProtectedRoute>
+                <CreateQuizPage />
+              </ProtectedRoute>
+            } 
+          />
+          <Route 
+            path="/leaderboard" 
+            element={
+              <ProtectedRoute>
+                <LeaderboardPage />
+              </ProtectedRoute>
+            } 
+          />
         </Routes>
       )}
       <TokenExpirationAlert warningTime={5 * 60 * 1000} />

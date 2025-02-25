@@ -10,7 +10,7 @@ import {
   PageContainer,
   Select,
 } from '../components/shared/StyledComponents';
-import { getValidToken } from '../utils/auth';
+import { checkAuthentication, removeToken } from '../utils/auth';
 import { handleApiError } from '../utils/errorHandler';
 
 const TopBar = styled.div`
@@ -63,10 +63,14 @@ const HomePage = ({ user, updateTheme }) => {
   const navigate = useNavigate();
 
   useEffect(() => {
-    const token = getValidToken();
-    if (!token) {
-      navigate('/');
-    }
+    const verifyAuth = async () => {
+      const isAuthenticated = await checkAuthentication();
+      if (!isAuthenticated) {
+        navigate('/');
+      }
+    };
+
+    verifyAuth();
   }, [navigate]);
 
   const handleJoinSession = async () => {
@@ -79,8 +83,8 @@ const HomePage = ({ user, updateTheme }) => {
       setError('');
       setIsJoining(true);
       
-      const token = getValidToken();
-      if (!token) {
+      const isAuthenticated = await checkAuthentication();
+      if (!isAuthenticated) {
         navigate('/');
         return;
       }
@@ -92,6 +96,8 @@ const HomePage = ({ user, updateTheme }) => {
       }
     } catch (error) {
       handleApiError(error, setError, setIsLoading);
+    } finally {
+      setIsJoining(false);
     }
   };
 
@@ -100,8 +106,8 @@ const HomePage = ({ user, updateTheme }) => {
     navigate('/create-quiz');
   };
 
-  const handleLogout = () => {
-    localStorage.removeItem('token');
+  const handleLogout = async () => {
+    await removeToken();
     navigate('/');
   };
 

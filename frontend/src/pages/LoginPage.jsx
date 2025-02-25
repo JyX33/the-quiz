@@ -1,8 +1,7 @@
 // src/pages/LoginPage.jsx
-import api from '../utils/axios';
 import PropTypes from 'prop-types';
-import { useState } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { useEffect, useState } from 'react';
+import { useLocation, useNavigate } from 'react-router-dom';
 import styled from 'styled-components';
 import FormInput from '../components/shared/FormInput';
 import LoadingButton from '../components/shared/LoadingButton';
@@ -11,6 +10,8 @@ import {
   PageContainer,
   Title,
 } from '../components/shared/StyledComponents';
+import { checkAuthentication } from '../utils/auth';
+import api from '../utils/axios';
 import { handleApiError } from '../utils/errorHandler';
 import { validatePassword, validateUsername } from '../utils/validation';
 
@@ -51,7 +52,34 @@ const LoginPage = ({ setUser }) => {
   const [password, setPassword] = useState('');
   const [error, setError] = useState('');
   const [isLoading, setIsLoading] = useState(false);
+  const [isCheckingAuth, setIsCheckingAuth] = useState(true);
   const navigate = useNavigate();
+  const location = useLocation();
+
+  // Check if user is already authenticated
+  useEffect(() => {
+    const checkAuth = async () => {
+      try {
+        const isAuthenticated = await checkAuthentication();
+        if (isAuthenticated) {
+          // Get user data
+          const userRes = await api.get('/users/me');
+          setUser(userRes.data);
+          
+          // Redirect to the intended destination or home
+          const from = location.state?.from?.pathname || '/home';
+          navigate(from, { replace: true });
+        }
+      } catch (error) {
+        // Just continue to login page
+        console.error('Error checking authentication:', error);
+      } finally {
+        setIsCheckingAuth(false);
+      }
+    };
+
+    checkAuth();
+  }, [location, navigate, setUser]);
 
   const validateForm = () => {
     const usernameValidation = validateUsername(username);
@@ -81,9 +109,6 @@ const LoginPage = ({ setUser }) => {
     try {
       // Use the API utility that includes withCredentials
       const res = await api.post('/users/login', { username, password });
-
-      console.log('Login response:', res.data);
-      console.log('Cookies after login:', document.cookie); // This will only show non-HttpOnly cookies
       
       // If the response includes user data directly, use it
       if (res.data.user) {
@@ -92,7 +117,6 @@ const LoginPage = ({ setUser }) => {
       } else {
         // Token is handled via cookies now
         const userRes = await api.get('/users/me');
-        
         setUser(userRes.data);
         navigate('/home');
       }
@@ -100,6 +124,14 @@ const LoginPage = ({ setUser }) => {
       handleApiError(error, setError, setIsLoading);
     }
   };
+
+  if (isCheckingAuth) {
+    return (
+      <LoginContainer>
+        <div>Checking authentication...</div>
+      </LoginContainer>
+    );
+  }
 
   return (
     <LoginContainer>
@@ -136,7 +168,6 @@ const LoginPage = ({ setUser }) => {
               type="submit"
               isLoading={isLoading}
               loadingText="Logging in..."
-              onClick={null}
               style={{ flex: 1 }}
             >
               Login

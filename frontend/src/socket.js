@@ -1,17 +1,5 @@
 import { io } from 'socket.io-client';
-import axios from './utils/axios';
-
-// Create a function to get a fresh token
-async function refreshSocketToken() {
-  try {
-    // Attempt to refresh the token
-    await axios.post('/users/refresh-token');
-    return true;
-  } catch (error) {
-    console.error('Failed to refresh token for socket connection', error.message);
-    return false;
-  }
-}
+import { refreshToken } from './utils/auth';
 
 // Initialize socket
 const socket = io('http://localhost:5000', {
@@ -25,7 +13,7 @@ socket.on('connect_error', async (error) => {
   
   if (error.message === 'invalid token') {
     // Try to refresh the token and reconnect
-    const refreshed = await refreshSocketToken();
+    const refreshed = await refreshToken();
     if (refreshed) {
       socket.connect();
     } else {

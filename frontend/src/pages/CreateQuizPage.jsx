@@ -10,7 +10,7 @@ import {
   QuestionContainer,
   Title,
 } from '../components/shared/StyledComponents';
-import { getValidToken } from '../utils/auth';
+import { checkAuthentication } from '../utils/auth';
 import { handleApiError } from '../utils/errorHandler';
 import { validateOptions, validateQuestion, validateQuizTitle } from '../utils/validation';
 import LoadingButton from '../components/shared/LoadingButton';
@@ -113,13 +113,14 @@ const CreateQuizPage = () => {
     setIsLoading(true);
     setError('');
     
-    const token = getValidToken();
-    if (!token) {
-      navigate('/');
-      return;
-    }
-
     try {
+      // Verify authentication status
+      const isAuthenticated = await checkAuthentication();
+      if (!isAuthenticated) {
+        navigate('/');
+        return;
+      }
+
       const res = await api.post(
         '/quizzes',
         { title, questions, category, difficulty }

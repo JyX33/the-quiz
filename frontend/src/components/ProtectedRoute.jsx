@@ -1,7 +1,7 @@
-import { useState, useEffect } from 'react';
-import { Navigate, useLocation } from 'react-router-dom';
 import PropTypes from 'prop-types';
-import { isTokenExpired } from '../utils/auth';
+import { useEffect, useState } from 'react';
+import { Navigate, useLocation } from 'react-router-dom';
+import api from '../utils/axios';
 import LoadingSpinner from './shared/LoadingSpinner';
 
 /**
@@ -18,16 +18,18 @@ const ProtectedRoute = ({ children }) => {
   const location = useLocation();
 
   useEffect(() => {
-    const verifyAuth = () => {
-      const token = localStorage.getItem('token');
-      
-      if (!token || isTokenExpired(token)) {
-        setIsAuthenticated(false);
-      } else {
+    const verifyAuth = async () => {
+      try {
+        // Make a request to verify authentication instead of checking localStorage
+        await api.get('/users/me');
         setIsAuthenticated(true);
+      } catch (error) {
+        // If request fails, user is not authenticated
+        setIsAuthenticated(false);
+        console.error('Authentication check failed:', error);
+      } finally {
+        setIsLoading(false);
       }
-      
-      setIsLoading(false);
     };
 
     verifyAuth();
