@@ -262,9 +262,17 @@ const setupSockets = (io) => {
 
     socket.on('startQuiz', ({ sessionId }) => {
       try {
+        // Log the request with more detail
+        logger.debug('Start quiz request received:', {
+          sessionId,
+          userId: socket.userId,
+          username: socket.username
+        });
+
+        // First check if the session exists, regardless of creator
         db.get(
-          'SELECT * FROM quiz_sessions WHERE id = ? AND creator_id = ?',
-          [sessionId, socket.userId],
+          'SELECT * FROM quiz_sessions WHERE id = ?',
+          [sessionId],
           async (err, session) => {
             if (err) {
               logger.error('Error checking session for start:', { 
@@ -273,21 +281,47 @@ const setupSockets = (io) => {
               });
               return socket.emit('error', 'Failed to start quiz');
             }
+            
             if (!session) {
-              logger.warn('Unauthorized quiz start attempt:', { 
+              logger.warn('Quiz start attempt for non-existent session:', { 
                 sessionId, 
                 userId: socket.userId 
               });
-              return socket.emit('error', 'Unauthorized or session not found');
+              return socket.emit('error', 'Session not found');
             }
             
+            // Now check if user is authorized to start the quiz
+            // Either they are the creator or an admin (checking creator_id is safe)
+            if (session.creator_id !== socket.userId) {
+              // Log the discrepancy in detail
+              logger.warn('Unauthorized quiz start attempt:', { 
+                sessionId, 
+                userId: socket.userId,
+                creatorId: session.creator_id,
+                reason: 'User is not the session creator'
+              });
+              return socket.emit('error', 'You are not authorized to start this quiz');
+            }
+            
+            // If we get here, the user is authorized to start the quiz
             db.run(
               'UPDATE quiz_sessions SET status = ? WHERE id = ?',
               ['in_progress', sessionId],
               async (err) => {
-                if (err) return socket.emit('error', 'Failed to start quiz');
+                if (err) {
+                  logger.error('Failed to update session status:', {
+                    error: err.message,
+                    sessionId
+                  });
+                  return socket.emit('error', 'Failed to start quiz');
+                }
+                
                 try {
                   await logUserAction(socket.userId, 'start_quiz');
+                  logger.info('Quiz started successfully:', {
+                    sessionId,
+                    startedBy: socket.userId
+                  });
                   io.to(sessionId).emit('quizStarted');
                 } catch (error) {
                   logger.error('Error logging start quiz action:', { 
@@ -295,6 +329,8 @@ const setupSockets = (io) => {
                     sessionId, 
                     userId: socket.userId 
                   });
+                  // Still emit the event since the database operation succeeded
+                  io.to(sessionId).emit('quizStarted');
                 }
               }
             );

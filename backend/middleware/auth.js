@@ -66,14 +66,30 @@ const authenticateSocket = (socket, next) => {
       tokenFromHeader = authHeader.substring(7);
     }
     
-    const token = tokenFromAuth || tokenFromHeader;
+    // Try to get token from cookies as a last resort
+    let tokenFromCookie = null;
+    if (socket.handshake.headers.cookie) {
+      const cookies = socket.handshake.headers.cookie.split(';')
+        .map(cookie => cookie.trim())
+        .reduce((acc, curr) => {
+          if (curr.includes('=')) {
+            const [key, value] = curr.split('=');
+            acc[key] = value;
+          }
+          return acc;
+        }, {});
+      
+      tokenFromCookie = cookies.token || cookies.socket_token;
+    }
+    
+    const token = tokenFromAuth || tokenFromHeader || tokenFromCookie;
     
     logger.debug('Socket auth attempt', {
       socketId: socket.id,
       ip: socket.handshake.address,
       hasAuthToken: !!tokenFromAuth,
       hasHeaderToken: !!tokenFromHeader,
-      authHeader: authHeader ? `${authHeader.substr(0, 15)}...` : 'none' // Log partial header for debugging
+      hasCookieToken: !!tokenFromCookie
     });
     
     if (!token) {
@@ -83,18 +99,31 @@ const authenticateSocket = (socket, next) => {
       });
       return next(new Error('Authentication required'));
     }
-  } catch (error) {
-    logger.error('Error in socket authentication processing:', {
-      error: error.message,
-      socketId: socket.id
-    });
-    return next(new Error('Authentication error'));
-  }
 
-  jwt.verify(token, config.jwtSecret, (err, user) => {
-    if (err) {
+    try {
+      // Use try/catch around verify to ensure we handle any JWT parsing errors
+      const user = jwt.verify(token, config.jwtSecret);
+      
+      if (!user || !user.id) {
+        logger.warn('Socket authentication failed: Invalid user data in token', {
+          socketId: socket.id,
+          ip: socket.handshake.address
+        });
+        return next(new Error('Invalid user data'));
+      }
+      
+      logger.debug('Socket authentication successful', {
+        userId: user.id,
+        socketId: socket.id
+      });
+      
+      // Store user data in socket
+      socket.userId = user.id;
+      socket.username = user.username || 'Unknown User';
+      next();
+    } catch (jwtError) {
       // Handle different JWT errors
-      if (err.name === 'TokenExpiredError') {
+      if (jwtError.name === 'TokenExpiredError') {
         logger.warn('Socket authentication failed: Token expired', {
           socketId: socket.id,
           ip: socket.handshake.address
@@ -102,26 +131,23 @@ const authenticateSocket = (socket, next) => {
         return next(new Error('Token expired'));
       } else {
         logger.warn('Socket authentication failed: Invalid token', {
-          error: err.message,
+          error: jwtError.message,
           socketId: socket.id,
           ip: socket.handshake.address
         });
         return next(new Error('Invalid authentication token'));
       }
     }
-    
-    logger.debug('Socket authentication successful', {
-      userId: user.id,
-      socketId: socket.id
+  } catch (error) {
+    logger.error('Error in socket authentication processing:', {
+      error: error.message,
+      stack: error.stack,
+      socketId: socket.id || 'unknown'
     });
-    
-    socket.userId = user.id;
-    socket.username = user.username; // Add username to socket for easy access
-    next();
-  });
+    return next(new Error('Authentication error'));
+  }
 };
 
 export {
-  authenticateToken,
-  authenticateSocket
+  authenticateSocket, authenticateToken
 };

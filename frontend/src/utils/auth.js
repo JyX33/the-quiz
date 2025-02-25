@@ -33,6 +33,8 @@ export const checkAuthentication = async () => {
   }
 };
 
+
+
 /**
  * Removes the current token from storage
  * @returns {Promise<boolean>} Success status

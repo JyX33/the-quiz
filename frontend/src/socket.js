@@ -2,12 +2,12 @@
 import { io } from 'socket.io-client';
 import { refreshToken } from './utils/auth';
 
-// Get token from session storage
+// Get token from localStorage
 const getStoredToken = () => {
   try {
-    const token = sessionStorage.getItem('socket_token');
+    // Try to get token from localStorage instead of sessionStorage
+    const token = localStorage.getItem('socket_token');
     if (token) {
-      // Only log the first few characters of the token for security
       const tokenPreview = token.substring(0, 10) + '...';
       console.log(`Found stored socket token: ${tokenPreview}`);
     } else {
@@ -15,7 +15,7 @@ const getStoredToken = () => {
     }
     return token;
   } catch (error) {
-    console.error('Error accessing session storage:', error);
+    console.error('Error accessing localStorage:', error);
     return null;
   }
 };
@@ -23,8 +23,11 @@ const getStoredToken = () => {
 // Initialize socket with auto-connect disabled to setup auth first
 const socket = io('http://localhost:5000', {
   autoConnect: false, // Keep disabled until we set auth
-  withCredentials: true // Important for cookies
-  // Don't set headers here - we'll set them dynamically in connectSocket
+  withCredentials: true, // Important for cookies
+  reconnectionAttempts: 5, // Limit reconnection attempts
+  reconnectionDelay: 1000, // Start with 1s delay
+  reconnectionDelayMax: 5000, // Max 5s delay
+  timeout: 10000 // 10s connection timeout
 });
 
 // Socket will be connected externally by connectSocket function
@@ -74,6 +77,13 @@ export const connectSocket = (token = null) => {
   
   console.log('Setting up socket connection with auth token');
   
+  // Store the token in localStorage for future use
+  try {
+    localStorage.setItem('socket_token', authToken);
+  } catch (error) {
+    console.error('Error storing socket token:', error);
+  }
+  
   // Always disconnect first to ensure clean state
   if (socket.connected) {
     socket.disconnect();
@@ -105,7 +115,7 @@ export const disconnectSocket = () => {
       socket.disconnect();
     }
     // Clean up stored token
-    sessionStorage.removeItem('socket_token');
+    localStorage.removeItem('socket_token');
     console.log('Socket disconnected and token cleaned up');
     return true;
   } catch (error) {
@@ -134,11 +144,50 @@ socket.io.on("reconnect_attempt", (attempt) => {
   const token = getStoredToken();
   if (token) {
     socket.auth = { token };
-    // Remove extraHeaders handling as we're using auth object exclusively
     console.log('Updated auth token for reconnection attempt');
   } else {
     console.log('No token available for reconnection');
   }
+});
+
+// Add error handling for socket events
+socket.on('error', (error) => {
+  console.error('Socket error received:', error);
+  
+  // For unauthorized errors, try to refresh token and reconnect
+  if (error.includes('Unauthorized') || error.includes('authentication')) {
+    // Attempt to refresh the auth token
+    refreshToken()
+      .then(success => {
+        if (success) {
+          console.log('Token refreshed after error, reconnecting socket');
+          connectSocket();
+        } else {
+          console.error('Failed to refresh token after error');
+        }
+      })
+      .catch(err => {
+        console.error('Error refreshing token after socket error:', err);
+      });
+  }
+});
+
+// Add a custom error handler for session errors
+socket.on('session_error', (error) => {
+  console.error('Session error received:', error);
+  
+  // You can add custom handling for different session errors here
+  // For example, redirecting to home page for invalid sessions
+  if (error.includes('not found') || error.includes('invalid')) {
+    console.log('Invalid session, redirecting to home');
+    window.location.href = '/home';
+  }
+});
+
+// Add a general reconnection strategy
+socket.io.on('reconnect_failed', () => {
+  console.error('Socket reconnection failed after multiple attempts');
+  // Consider showing a modal to the user suggesting they refresh the page
 });
 
 // Heartbeat mechanism with proper interval reference for cleanup
@@ -148,19 +197,34 @@ const heartbeatInterval = setInterval(() => {
   }
 }, 5000); // Emit heartbeat every 5 seconds
 
+// Helper function to emit events with timeout
+export const emitWithTimeout = (eventName, data, timeoutMs = 10000) => {
+  return new Promise((resolve, reject) => {
+    // Set timeout
+    const timer = setTimeout(() => {
+      reject(new Error(`Timeout while waiting for response to ${eventName}`));
+    }, timeoutMs);
+    
+    // Listen for ack or response
+    socket.emit(eventName, data, (response) => {
+      clearTimeout(timer);
+      
+      if (response && response.error) {
+        reject(new Error(response.error));
+      } else {
+        resolve(response);
+      }
+    });
+  });
+};
+
 // Clean up interval and token on page unload
 window.addEventListener('beforeunload', () => {
   clearInterval(heartbeatInterval);
   if (socket.connected) {
     socket.disconnect();
   }
-  // Clean up stored token
-  try {
-    sessionStorage.removeItem('socket_token');
-    console.log('Socket token cleaned up on unload');
-  } catch (error) {
-    console.error('Error cleaning up socket token:', error);
-  }
+  // We don't clean up the token on unload as we want it to persist between sessions
 });
 
 export default socket;

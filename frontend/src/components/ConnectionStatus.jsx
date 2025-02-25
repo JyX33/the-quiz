@@ -37,7 +37,7 @@ const StatusIndicator = styled.div`
 
 const ConnectionStatus = () => {
   const [connected, setConnected] = useState(socket.connected);
-  const [setReconnectAttempt] = useState(0); // Fixed this line
+  const [reconnectAttempt, setReconnectAttempt] = useState(0); // Fixed: correctly destructure state
   
   useEffect(() => {
     const handleConnect = () => {
@@ -58,7 +58,7 @@ const ConnectionStatus = () => {
     
     socket.on('connect', handleConnect);
     socket.on('disconnect', handleDisconnect);
-    socket.on('reconnect_attempt', handleReconnectAttempt);
+    socket.io.on('reconnect_attempt', handleReconnectAttempt);
     
     // Update initial state
     setConnected(socket.connected);
@@ -66,7 +66,7 @@ const ConnectionStatus = () => {
     return () => {
       socket.off('connect', handleConnect);
       socket.off('disconnect', handleDisconnect);
-      socket.off('reconnect_attempt', handleReconnectAttempt);
+      socket.io.off('reconnect_attempt', handleReconnectAttempt);
     };
   }, []);
   

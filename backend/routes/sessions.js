@@ -17,23 +17,25 @@ router.post('/', authenticateToken, asyncHandler(async (req, res, next) => {
   }
   
   // Verify that the quiz exists
-  const quiz = await db.getAsync('SELECT id FROM quizzes WHERE id = ?', [quizId]);
+  const quiz = await db.getAsync('SELECT id, creator_id FROM quizzes WHERE id = ?', [quizId]);
   
   if (!quiz) {
     throw new AppError('Quiz not found', 404, 'QUIZ_NOT_FOUND');
   }
   
   const sessionId = uuidv4();
-
+  
+  // Log detailed information about the creator
   logger.debug('Creating new quiz session:', { 
     quizId, 
-    userId: req.user.id 
+    userId: req.user.id,
+    quizCreatorId: quiz.creator_id
   });
 
   try {
     // Use transaction to ensure both operations succeed or fail together
     await runTransactionAsync(async () => {
-      // Create the session
+      // Create the session with the authenticated user as creator
       await db.runAsync(
         'INSERT INTO quiz_sessions (id, quiz_id, creator_id, status) VALUES (?, ?, ?, ?)',
         [sessionId, quizId, req.user.id, 'waiting']
@@ -58,7 +60,12 @@ router.post('/', authenticateToken, asyncHandler(async (req, res, next) => {
       userId: req.user.id 
     });
     
-    res.status(201).json({ sessionId });
+    // Return more information about the session including creator_id
+    res.status(201).json({ 
+      sessionId,
+      creator_id: req.user.id,
+      quiz_id: quizId 
+    });
   } catch (error) {
     logger.error('Failed to create quiz session:', {
       error: error.message,
@@ -96,6 +103,78 @@ router.get('/:id', authenticateToken, asyncHandler(async (req, res, next) => {
   });
   
   res.json(session);
+}));
+
+// Debug route to check session ownership (add this for debugging)
+router.get('/:id/debug', authenticateToken, asyncHandler(async (req, res, next) => {
+  const sessionId = req.params.id;
+  
+  logger.debug('Debug request for session details:', { 
+    sessionId,
+    userId: req.user.id 
+  });
+
+  try {
+    // Get detailed session information
+    const session = await db.getAsync(
+      `SELECT qs.*, q.questions, q.category, q.difficulty, u.username as creator_username
+       FROM quiz_sessions qs 
+       JOIN quizzes q ON qs.quiz_id = q.id 
+       JOIN users u ON qs.creator_id = u.id
+       WHERE qs.id = ?`,
+      [sessionId]
+    );
+    
+    if (!session) {
+      throw new AppError('Session not found', 404, 'SESSION_NOT_FOUND');
+    }
+    
+    // Get players in the session
+    const players = await db.allAsync(
+      `SELECT qsp.user_id, u.username 
+       FROM quiz_session_players qsp 
+       JOIN users u ON qsp.user_id = u.id 
+       WHERE qsp.session_id = ?`,
+      [sessionId]
+    );
+    
+    // Check if requesting user is creator
+    const isCreator = session.creator_id === req.user.id;
+    
+    logger.info('Session details retrieved for debugging:', { 
+      sessionId,
+      requesterId: req.user.id,
+      creatorId: session.creator_id,
+      isCreator,
+      playerCount: players.length
+    });
+    
+    // Return detailed information
+    res.json({
+      session: {
+        id: session.id,
+        quiz_id: session.quiz_id,
+        creator_id: session.creator_id,
+        creator_username: session.creator_username,
+        status: session.status,
+        current_question: session.current_question,
+        category: session.category,
+        difficulty: session.difficulty
+      },
+      requestingUser: {
+        id: req.user.id,
+        isCreator
+      },
+      players: players
+    });
+  } catch (error) {
+    logger.error('Failed to fetch session debug info:', {
+      error: error.message,
+      sessionId,
+      userId: req.user.id
+    });
+    next(error);
+  }
 }));
 
 // Get session players

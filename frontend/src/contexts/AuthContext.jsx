@@ -2,7 +2,7 @@
 import { createContext, useContext, useState, useEffect, useCallback } from 'react';
 import PropTypes from 'prop-types';
 import api from '../utils/axios';
-import { connectSocket, disconnectSocket } from '../socket'; // Import socket functions
+import { connectSocket, disconnectSocket } from '../socket';
 
 // Create context
 const AuthContext = createContext(null);
@@ -19,6 +19,21 @@ export const AuthProvider = ({ children }) => {
   const [isLoading, setIsLoading] = useState(true);
   const [authError, setAuthError] = useState(null);
 
+  // Extract token from cookies helper function
+  const extractTokenFromCookies = () => {
+    try {
+      const cookies = document.cookie.split(';');
+      const socketTokenCookie = cookies.find(c => c.trim().startsWith('socket_token='));
+      if (socketTokenCookie) {
+        return socketTokenCookie.split('=')[1];
+      }
+      return null;
+    } catch (error) {
+      console.error('Error extracting token from cookies:', error);
+      return null;
+    }
+  };
+
   // Function to check authentication status
   const checkAuth = useCallback(async (silent = false) => {
     if (!silent) {
@@ -32,9 +47,26 @@ export const AuthProvider = ({ children }) => {
       setAuthError(null);
       
       // Connect socket with authentication
-      // Pass the token directly to the connectSocket function
-      connectSocket();
-      console.log('Connected socket after successful authentication');
+      // First try to get token from localStorage
+      let token = localStorage.getItem('socket_token');
+      
+      // If no token in localStorage, try to extract from cookies
+      if (!token) {
+        token = extractTokenFromCookies();
+        
+        // If found in cookies, store in localStorage for future use
+        if (token) {
+          localStorage.setItem('socket_token', token);
+        }
+      }
+      
+      // Connect socket with the token
+      if (token) {
+        connectSocket(token);
+        console.log('Connected socket after successful authentication');
+      } else {
+        console.warn('No token available for socket connection');
+      }
       
       return true;
     } catch (error) {
@@ -58,7 +90,7 @@ export const AuthProvider = ({ children }) => {
     }
   }, []);
 
-  // Log out the user - now without navigate
+  // Log out the user
   const logout = useCallback(async () => {
     setIsLoading(true);
     try {
@@ -68,7 +100,11 @@ export const AuthProvider = ({ children }) => {
       
       // Clean up socket connection and token
       disconnectSocket();
-      sessionStorage.removeItem('socket_token');
+      localStorage.removeItem('socket_token');
+      
+      // Clear any authentication cookies manually as well
+      document.cookie = 'token=; expires=Thu, 01 Jan 1970 00:00:00 UTC; path=/;';
+      document.cookie = 'socket_token=; expires=Thu, 01 Jan 1970 00:00:00 UTC; path=/;';
       
       return true;
     } catch (error) {
@@ -80,7 +116,7 @@ export const AuthProvider = ({ children }) => {
     }
   }, []);
 
-  // Login function - now without navigate
+  // Login function
   const login = useCallback(async (username, password) => {
     setIsLoading(true);
     
@@ -92,14 +128,24 @@ export const AuthProvider = ({ children }) => {
         setUser(res.data.user);
         setIsAuthenticated(true);
         
-        // Store socket token in sessionStorage for socket auth
+        // Store socket token in localStorage for socket auth
         if (res.data.socket_token) {
-          sessionStorage.setItem('socket_token', res.data.socket_token);
+          localStorage.setItem('socket_token', res.data.socket_token);
+          console.log('Socket token stored in localStorage');
+          
           // Connect socket with authentication after successful login
           const socketConnected = connectSocket(res.data.socket_token);
           console.log('Socket connection after login:', socketConnected ? 'successful' : 'failed');
         } else {
           console.error('No socket token received from server');
+          
+          // Try to extract token from cookies as fallback
+          const cookieToken = extractTokenFromCookies();
+          if (cookieToken) {
+            localStorage.setItem('socket_token', cookieToken);
+            connectSocket(cookieToken);
+            console.log('Socket token extracted from cookies');
+          }
         }
         
         return { success: true, user: res.data.user };
@@ -111,10 +157,18 @@ export const AuthProvider = ({ children }) => {
           setUser(userRes.data);
           setIsAuthenticated(true);
           
-          // Connect socket with authentication after successful login
-          const socketConnected = connectSocket();
-          console.log('Socket connection after login (alternative path):',
-                     socketConnected ? 'successful' : 'failed');
+          // Try to extract token from cookies
+          const tokenFromCookie = extractTokenFromCookies();
+          if (tokenFromCookie) {
+            localStorage.setItem('socket_token', tokenFromCookie);
+            const socketConnected = connectSocket(tokenFromCookie);
+            console.log('Socket connection using cookie token:', socketConnected ? 'successful' : 'failed');
+          } else {
+            // Try a general connect with any available token
+            const socketConnected = connectSocket();
+            console.log('Socket connection after login (alternative path):', 
+                      socketConnected ? 'successful' : 'failed');
+          }
           
           return { success: true, user: userRes.data };
         } catch (userError) {

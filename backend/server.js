@@ -45,7 +45,7 @@ app.use(morgan(config.logging.morganFormat, { stream }));
 logger.info('Server initialization started');
 logger.info(`Using JWT_SECRET from environment: ${process.env.JWT_SECRET ? 'Yes' : 'No, using default'}`);
 
-// Setup Socket.io with enhanced cookie handling
+// Setup Socket.io with enhanced error handling and configuration
 const io = new Server(server, {
   cors: {
     origin: config.corsOrigin,
@@ -59,16 +59,35 @@ const io = new Server(server, {
     httpOnly: true,
     sameSite: process.env.NODE_ENV === 'production' ? 'none' : 'lax',
     secure: process.env.NODE_ENV === 'production'
-  }
+  },
+  // Add pingTimeout and pingInterval configuration
+  pingTimeout: 60000,
+  pingInterval: 25000
 });
 
-// Log socket connection attempts to help debug issues
+// Improved error logging for socket connections
 io.engine.on("connection_error", (err) => {
   logger.warn(`Socket.io connection error: ${err.code} - ${err.message}`, {
     code: err.code,
     message: err.message,
     context: err.context
   });
+  // Prevent these errors from crashing the server
+  // Just log them and continue
+});
+
+// Add global error handler for socket middleware
+io.use((socket, next) => {
+  try {
+    // Continue to the next middleware
+    next();
+  } catch (error) {
+    logger.error('Socket middleware error:', {
+      error: error.message,
+      socketId: socket.id
+    });
+    next(new Error('Internal server error'));
+  }
 });
 
 // Middleware
@@ -174,8 +193,32 @@ process.on('uncaughtException', (error) => {
   gracefulShutdown('uncaughtException');
 });
 
-// Handle unhandled promise rejections with graceful shutdown
+// Handle unhandled promise rejections without shutting down
 process.on('unhandledRejection', (reason, promise) => {
-  logger.error('Unhandled Rejection at:', promise, 'reason:', reason);
-  gracefulShutdown('unhandledRejection');
+  logger.error('Unhandled Rejection at:', {
+    promise: promise.toString().substring(0, 100) + '...',
+    reason: reason instanceof Error ? 
+      { message: reason.message, stack: reason.stack } : 
+      String(reason).substring(0, 200)
+  });
+  
+  // Don't call gracefulShutdown - just log the error and continue
+  // This prevents unhandled Socket.io errors from bringing down the server
+  
+  // If we determine it's a critical error that should cause a shutdown,
+  // we can implement specific conditions here
+  if (reason instanceof Error && 
+      reason.message.includes('CRITICAL_DATABASE_FAILURE')) {
+    logger.fatal('Critical error detected, initiating shutdown');
+    gracefulShutdown('critical_error');
+  }
+});
+
+// Handle uncaught exceptions - these are still serious enough to warrant shutdown
+process.on('uncaughtException', (error) => {
+  logger.error('Uncaught Exception:', {
+    error: error.message,
+    stack: error.stack
+  });
+  gracefulShutdown('uncaughtException');
 });

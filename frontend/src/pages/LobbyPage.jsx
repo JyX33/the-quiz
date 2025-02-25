@@ -11,6 +11,7 @@ import {
 } from '../components/shared/StyledComponents';
 import { useAuth } from '../contexts/AuthContext';
 import socket from '../socket';
+import api from '../utils/axios';
 
 const pulse = keyframes`
   0% { transform: scale(1); }
@@ -146,12 +147,26 @@ const StartButton = styled(Button)`
   }
 `;
 
+const ReconnectButton = styled(Button)`
+  margin-top: ${({ theme }) => theme.spacing.md};
+`;
+
 const ErrorDisplay = styled.div`
   color: ${({ theme }) => theme.error};
   background: ${({ theme }) => theme.error + '11'};
   padding: ${({ theme }) => theme.spacing.md};
   border-radius: ${({ theme }) => theme.borderRadius};
   margin-bottom: ${({ theme }) => theme.spacing.md};
+`;
+
+const StatusBadge = styled.span`
+  display: inline-block;
+  padding: 2px 8px;
+  border-radius: 12px;
+  font-size: 0.8rem;
+  margin-left: 8px;
+  background: ${({ theme }) => theme.primary};
+  color: white;
 `;
 
 const LobbyPage = () => {
@@ -163,21 +178,64 @@ const LobbyPage = () => {
   const [startProgress, setStartProgress] = useState(0);
   const [error, setError] = useState('');
   const [socketIsConnected, setSocketIsConnected] = useState(socket.connected);
+  const [sessionExists, setSessionExists] = useState(true);
   
+  // Add this state for session info
+  const [sessionInfo, setSessionInfo] = useState(null);
+  const [isCreator, setIsCreator] = useState(false);
+  
+  // Refs defined at the top level of the component
+  const hasJoinedRef = useRef(false);
   const chatRef = useRef(null);
+  
   const navigate = useNavigate();
   const { user } = useAuth();
+
+  // Add this effect to fetch session details and check creator status
+  useEffect(() => {
+    if (!sessionId || !user) return;
+    
+    const fetchSessionDetails = async () => {
+      try {
+        const response = await api.get(`/sessions/${sessionId}`);
+        const sessionData = response.data;
+        
+        setSessionInfo(sessionData);
+        
+        // Check if current user is the creator
+        const userIsCreator = sessionData.creator_id === user.id;
+        console.log('Creator check:', {
+          userId: user.id,
+          creatorId: sessionData.creator_id,
+          isCreator: userIsCreator
+        });
+        
+        setIsCreator(userIsCreator);
+        
+        if (!userIsCreator) {
+          console.log('Current user is not the creator of this session');
+        }
+      } catch (error) {
+        console.error('Error fetching session details:', error);
+        setError('Failed to load session details');
+      }
+    };
+    
+    fetchSessionDetails();
+  }, [sessionId, user]);
 
   // Setup and teardown socket connection
   useEffect(() => {
     const handleConnect = () => {
       console.log('Socket connected in lobby');
       setSocketIsConnected(true);
+      setError(''); // Clear connection errors when connected
     };
     
     const handleDisconnect = () => {
       console.log('Socket disconnected in lobby');
       setSocketIsConnected(false);
+      setError('Connection lost. Trying to reconnect...');
     };
     
     socket.on('connect', handleConnect);
@@ -198,35 +256,64 @@ const LobbyPage = () => {
     
     console.log('Setting up lobby with session ID:', sessionId);
     
-    // Function to join the session
-    const joinCurrentSession = () => {
-      console.log('Joining session:', sessionId, 'User:', user);
-      socket.emit('joinSession', { sessionId });
+    // Improved session joining function with validation and retries
+    const joinSessionWithValidation = async () => {
+      // Check if we've already joined in this component instance
+      if (hasJoinedRef.current) {
+        console.log('Session already joined, skipping');
+        return;
+      }
       
-      // Add an initial system message
-      addMessage('System', 'Joining lobby...');
+      console.log('Attempting to join session:', sessionId, 'User:', user);
+      
+      try {
+        // Mark that we've attempted to join
+        hasJoinedRef.current = true;
+        
+        // First check if the session exists via REST API
+        const sessionResponse = await api.get(`/sessions/${sessionId}`, { 
+          timeout: 5000 // Add timeout to prevent hanging
+        });
+        
+        if (!sessionResponse.data) {
+          setSessionExists(false);
+          throw new Error('Session not found');
+        }
+        
+        setSessionExists(true);
+        console.log('Session verified via API, joining via socket');
+        addMessage('System', 'Joining lobby...');
+        
+        // Now emit the join event
+        if (socket.connected) {
+          socket.emit('joinSession', { sessionId });
+        } else {
+          throw new Error('Socket not connected');
+        }
+        
+      } catch (error) {
+        console.error('Error validating session:', error);
+        
+        if (error.response?.status === 404) {
+          setSessionExists(false);
+          setError('This session does not exist.');
+          addMessage('System', 'Error: This session does not exist.');
+        } else if (error.response?.status === 403) {
+          setError('You do not have permission to join this session.');
+          addMessage('System', 'Error: You do not have permission to join this session.');
+        } else {
+          // If API fails but socket is connected, try direct socket join as fallback
+          if (socket.connected) {
+            console.log('API validation failed, attempting direct socket join as fallback');
+            socket.emit('joinSession', { sessionId });
+            addMessage('System', 'Joining lobby (fallback method)...');
+          } else {
+            setError('Could not connect to the session. Please try again.');
+            addMessage('System', 'Error: Connection failed. Please try again.');
+          }
+        }
+      }
     };
-    
-    // Make sure we're connected before joining
-    if (socket.connected) {
-      console.log('Socket already connected, joining session directly');
-      joinCurrentSession();
-    } else {
-      console.log('Socket not connected, waiting for connection');
-      socket.connect();
-      
-      // Wait for connection before joining
-      const connectHandler = () => {
-        console.log('Connected in event handler, now joining session');
-        joinCurrentSession();
-      };
-      
-      socket.once('connect', connectHandler);
-      
-      return () => {
-        socket.off('connect', connectHandler);
-      };
-    }
     
     // Set up event handlers
     const playerJoinedHandler = (updatedPlayers) => {
@@ -272,6 +359,27 @@ const LobbyPage = () => {
     socket.on('quizStarted', quizStartedHandler);
     socket.on('error', errorHandler);
     
+    // Make sure we're connected before joining
+    if (socket.connected) {
+      console.log('Socket already connected, joining session directly');
+      joinSessionWithValidation();
+    } else {
+      console.log('Socket not connected, waiting for connection');
+      socket.connect();
+      
+      // Wait for connection before joining
+      const connectHandler = () => {
+        console.log('Connected in event handler, now joining session');
+        joinSessionWithValidation();
+      };
+      
+      socket.once('connect', connectHandler);
+      
+      return () => {
+        socket.off('connect', connectHandler);
+      };
+    }
+    
     // Debug
     socket.onAny((event, ...args) => {
       console.log(`Debug: Socket event received: ${event}`, args);
@@ -280,6 +388,7 @@ const LobbyPage = () => {
     // Clean up event handlers
     return () => {
       console.log('Cleaning up socket event handlers');
+      hasJoinedRef.current = false; // Reset the ref on cleanup
       socket.off('playerJoined', playerJoinedHandler);
       socket.off('playerLeft', playerLeftHandler);
       socket.off('chatMessage', chatMessageHandler);
@@ -288,7 +397,8 @@ const LobbyPage = () => {
       socket.off('error', errorHandler);
       socket.offAny();
     };
-  }, [sessionId, navigate, user]);
+    
+  }, [sessionId, navigate, user]); // Removed joinAttempts from dependency array
 
   // Auto-scroll chat to bottom when messages change
   useEffect(() => {
@@ -299,6 +409,51 @@ const LobbyPage = () => {
 
   const addMessage = (username, message) => {
     setMessages(prev => [...prev, { username, message, time: new Date() }]);
+  };
+
+  const handleReconnect = () => {
+    // Reset our joining flag to allow another attempt
+    hasJoinedRef.current = false;
+    
+    setError(''); // Clear any existing errors
+    
+    // Reconnect socket if needed
+    if (!socket.connected) {
+      socket.connect();
+    }
+    
+    // Create a manual reconnection function
+    const manualReconnect = async () => {
+      try {
+        // First check if the session exists
+        const sessionResponse = await api.get(`/sessions/${sessionId}`, { 
+          timeout: 5000
+        });
+        
+        if (!sessionResponse.data) {
+          setSessionExists(false);
+          setError('This session does not exist.');
+          addMessage('System', 'Error: This session does not exist.');
+          return;
+        }
+        
+        setSessionExists(true);
+        addMessage('System', 'Reconnecting to lobby...');
+        
+        // Manually emit join event
+        if (socket.connected) {
+          socket.emit('joinSession', { sessionId });
+        } else {
+          setError('Socket still disconnected. Please try again or refresh the page.');
+        }
+      } catch (error) {
+        console.error('Error during manual reconnection:', error);
+        setError('Failed to reconnect: ' + (error.message || 'Unknown error'));
+      }
+    };
+    
+    // Execute the reconnection
+    manualReconnect();
   };
 
   const sendMessage = () => {
@@ -313,45 +468,91 @@ const LobbyPage = () => {
   };
 
   const startQuiz = () => {
+    if (!isHost) {
+      setError('Only the session creator can start the quiz');
+      return;
+    }
+    
     let progress = 0;
-    const interval = setInterval(() => {
+    const progressInterval = setInterval(() => {
       progress += 2;
       setStartProgress(progress);
       if (progress >= 100) {
-        clearInterval(interval);
-        socket.emit('startQuiz', { sessionId });
+        clearInterval(progressInterval);
+        
+        try {
+          console.log('Emitting startQuiz event as user:', user?.id);
+          socket.emit('startQuiz', { sessionId });
+        } catch (error) {
+          console.error('Error starting quiz:', error);
+          setError('Failed to start quiz: ' + error.message);
+        }
       }
     }, 50);
   };
 
-  const isHost = players.length > 0 && user?.id === players[0]?.id;
+  // Use isCreator from state check instead of checking players
+  const isHost = isCreator || (sessionInfo && sessionInfo.creator_id === user?.id);
 
   const leaveSession = () => {
     socket.emit('leaveSession', { sessionId });
     navigate('/home');
   };
 
+  // Redirect if session doesn't exist
+  if (!sessionExists && !hasJoinedRef.current) {
+    return (
+      <PageContainer>
+        <Title>Session Not Found</Title>
+        <ErrorDisplay>
+          The session you are trying to join does not exist or has ended.
+        </ErrorDisplay>
+        <Button onClick={() => navigate('/home')}>
+          Return to Home
+        </Button>
+      </PageContainer>
+    );
+  }
+
   if (!user) return null;
 
   return (
     <PageContainer>
-      <Title>Waiting Room</Title>
+      <Title>
+        Waiting Room
+        {sessionInfo && (
+          <StatusBadge>{sessionInfo.status}</StatusBadge>
+        )}
+      </Title>
       
       {!socketIsConnected && (
         <ErrorDisplay>
           Socket is currently disconnected. Try refreshing the page.
+          <ReconnectButton onClick={handleReconnect}>
+            Reconnect
+          </ReconnectButton>
         </ErrorDisplay>
       )}
       
       {error && (
         <ErrorDisplay>
           {error}
+          {error.includes('multiple attempts') && (
+            <ReconnectButton onClick={handleReconnect}>
+              Try Again
+            </ReconnectButton>
+          )}
         </ErrorDisplay>
       )}
       
       <LobbyCard>
         <div>
           <h2>Players ({players.length})</h2>
+          {isHost && (
+            <div style={{ marginBottom: '12px', fontStyle: 'italic', color: '#666' }}>
+              You are the host of this session
+            </div>
+          )}
           <PlayerGrid>
             {players.length === 0 ? (
               <p>No players have joined yet. {socketIsConnected ? 'Waiting for players...' : 'Socket disconnected.'}</p>
@@ -359,7 +560,7 @@ const LobbyPage = () => {
               players.map((player) => (
                 <PlayerCard
                   key={player.id}
-                  $isHost={players[0]?.id === player.id}
+                  $isHost={(player.id === sessionInfo?.creator_id)}
                   $isNew={player === players[players.length - 1]}
                 >
                   <Avatar>
@@ -370,7 +571,7 @@ const LobbyPage = () => {
                       {player.id === user.id ? `${player.username} (You)` : player.username}
                     </PlayerName>
                     <PlayerStatus>
-                      {player.id === players[0]?.id ? 'Host' : 'Ready'}
+                      {player.id === sessionInfo?.creator_id ? 'Host' : 'Ready'}
                     </PlayerStatus>
                   </PlayerInfo>
                 </PlayerCard>
@@ -390,7 +591,11 @@ const LobbyPage = () => {
                   : 'Start Quiz'}
             </StartButton>
           )}
-          <Button onClick={() => leaveSession()} $variant="secondary">
+          <Button 
+            onClick={() => leaveSession()} 
+            $variant="secondary"
+            style={{ marginTop: '16px' }}
+          >
             Leave Session
           </Button>
         </div>
@@ -405,7 +610,7 @@ const LobbyPage = () => {
             ))}
           </ChatMessages>
           
-          <Form onSubmit={sendMessage} error={error}>
+          <Form onSubmit={sendMessage} error={""}>
             <ChatInput
               value={messageInput}
               onChange={(e) => setMessageInput(e.target.value)}

@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { useParams } from 'react-router-dom';
+import { useParams, useNavigate } from 'react-router-dom';
 import styled, { keyframes } from 'styled-components';
 import Form from '../components/shared/Form';
 import {
@@ -11,6 +11,7 @@ import {
 } from '../components/shared/StyledComponents';
 import { useAuth } from '../contexts/AuthContext';
 import socket from '../socket';
+import api from '../utils/axios';
 
 const slideIn = keyframes`
   from {
@@ -99,8 +100,29 @@ const ButtonGroup = styled.div`
   margin-top: ${({ theme }) => theme.spacing.lg};
 `;
 
+const ErrorDisplay = styled.div`
+  color: ${({ theme }) => theme.error};
+  background: ${({ theme }) => theme.error + '11'};
+  padding: ${({ theme }) => theme.spacing.md};
+  border-radius: ${({ theme }) => theme.borderRadius};
+  margin-bottom: ${({ theme }) => theme.spacing.md};
+`;
+
+const WaitingStateCard = styled(Card)`
+  text-align: center;
+  padding: ${({ theme }) => theme.spacing.xl};
+  margin-bottom: ${({ theme }) => theme.spacing.lg};
+`;
+
+const StatusMessage = styled.div`
+  font-size: 1.2rem;
+  margin: ${({ theme }) => theme.spacing.lg} 0;
+  animation: ${pulse} 2s infinite ease-in-out;
+`;
+
 const QuizRoomPage = () => {
   const { sessionId } = useParams();
+  const navigate = useNavigate();
   const [currentQuestion, setCurrentQuestion] = useState(0);
   const [answer, setAnswer] = useState('');
   const [scores, setScores] = useState({}); // {userId: {score, username}}
@@ -111,10 +133,89 @@ const QuizRoomPage = () => {
   const [updatedScore, setUpdatedScore] = useState(null);
   const [currentQuestionData, setCurrentQuestionData] = useState(null); // Store question data
   const [error, setError] = useState('');
+  const [sessionInfo, setSessionInfo] = useState(null);
+  const [isCreator, setIsCreator] = useState(false);
+  const [quizStarted, setQuizStarted] = useState(false);
+  const [fetchingQuizData, setFetchingQuizData] = useState(true);
+  const [socketConnected, setSocketConnected] = useState(socket.connected);
   
   const { user, isAuthenticated } = useAuth();
-  const isCreator = user?.id === sessionId; // Session creator's ID matches the sessionId
 
+  // Fetch session details to determine if user is creator
+  useEffect(() => {
+    if (!sessionId || !user) return;
+    
+    const fetchSessionDetails = async () => {
+      try {
+        setFetchingQuizData(true);
+        const response = await api.get(`/sessions/${sessionId}`);
+        const sessionData = response.data;
+        
+        console.log('Session data loaded:', sessionData);
+        setSessionInfo(sessionData);
+        
+        // Check if current user is the creator
+        const userIsCreator = sessionData.creator_id === user.id;
+        console.log('Creator check:', {
+          userId: user.id,
+          creatorId: sessionData.creator_id,
+          isCreator: userIsCreator
+        });
+        
+        setIsCreator(userIsCreator);
+        
+        // Parse quiz questions if available
+        if (sessionData.questions) {
+          try {
+            const parsedQuestions = JSON.parse(sessionData.questions);
+            setTotalQuestions(parsedQuestions.length);
+            if (sessionData.current_question < parsedQuestions.length) {
+              setCurrentQuestionData(parsedQuestions[sessionData.current_question]);
+              setCurrentQuestion(sessionData.current_question);
+            }
+          } catch (e) {
+            console.error("Error parsing questions:", e);
+          }
+        }
+        
+        // Check if quiz is already in progress
+        if (sessionData.status === 'in_progress') {
+          setQuizStarted(true);
+        }
+        
+        setFetchingQuizData(false);
+      } catch (error) {
+        console.error('Error fetching session details:', error);
+        setError('Failed to load quiz details');
+        setFetchingQuizData(false);
+      }
+    };
+    
+    fetchSessionDetails();
+  }, [sessionId, user]);
+
+  // Socket connection status
+  useEffect(() => {
+    const handleConnect = () => {
+      console.log('Socket connected in quiz room');
+      setSocketConnected(true);
+    };
+    
+    const handleDisconnect = () => {
+      console.log('Socket disconnected in quiz room');
+      setSocketConnected(false);
+    };
+    
+    socket.on('connect', handleConnect);
+    socket.on('disconnect', handleDisconnect);
+    
+    return () => {
+      socket.off('connect', handleConnect);
+      socket.off('disconnect', handleDisconnect);
+    };
+  }, []);
+
+  // Set up socket event listeners
   useEffect(() => {
     socket.on('playerJoined', (players) => {
       const playerMap = players.reduce((acc, p) => {
@@ -125,6 +226,7 @@ const QuizRoomPage = () => {
     });
 
     socket.on('scoreUpdate', (newScores) => {
+      console.log("Score update received:", newScores);
       setScores(newScores);
       setUpdatedScore(Object.keys(newScores).find(id => 
         newScores[id].score !== scores[id]?.score));
@@ -132,25 +234,58 @@ const QuizRoomPage = () => {
     });
 
     socket.on('nextQuestion', (index) => {
+      console.log("Next question event received:", index);
       setCurrentQuestion(index);
       setTimeLeft(null);
       setAnswer('');
       setQuestionStarted(false);
+      
+      // Update current question data if we have the questions loaded
+      if (sessionInfo && sessionInfo.questions) {
+        try {
+          const questions = JSON.parse(sessionInfo.questions);
+          if (index < questions.length) {
+            setCurrentQuestionData(questions[index]);
+          }
+        } catch (e) {
+          console.error("Error updating question data:", e);
+        }
+      }
     });
 
     socket.on('quizEnded', (finalScores) => {
+      console.log("Quiz ended event received");
       setScores(finalScores);
       // Show final scores in a more elegant way
       // This could be enhanced with a modal or animation
     });
 
+    socket.on('questionStarted', () => {
+      console.log("Question started event received");
+      setQuestionStarted(true);
+      setTimeLeft(30);
+    });
+
     socket.on('quizStateRestored', ({ currentQuestion, totalQuestions, question }) => {
+      console.log("Quiz state restored:", { currentQuestion, totalQuestions, question });
       setCurrentQuestion(currentQuestion);
       setTotalQuestions(totalQuestions);
       setCurrentQuestionData(question);
-      // Set the state to indicate the question has started
-      setQuestionStarted(true);
+      setQuizStarted(true);
+      // Set the state to indicate the question has started if it's in progress
+      if (question) {
+        setQuestionStarted(true);
+      }
     });
+
+    socket.on('error', (errorMessage) => {
+      console.error("Socket error:", errorMessage);
+      setError(errorMessage);
+    });
+
+    // Join the session room when component mounts
+    console.log("Joining session:", sessionId);
+    socket.emit('joinSession', { sessionId });
 
     return () => {
       socket.off('playerJoined');
@@ -158,8 +293,10 @@ const QuizRoomPage = () => {
       socket.off('nextQuestion');
       socket.off('quizEnded');
       socket.off('quizStateRestored');
+      socket.off('questionStarted');
+      socket.off('error');
     };
-  }, [scores]);
+  }, [sessionId, scores, sessionInfo]);
 
   useEffect(() => {
     if (timeLeft !== null && timeLeft > 0) {
@@ -191,42 +328,82 @@ const QuizRoomPage = () => {
   };
 
   const startQuestion = () => {
+    if (!isCreator) {
+      setError('Only the session creator can start questions');
+      return;
+    }
+    
+    console.log("Emitting startQuestion event");
     socket.emit('startQuestion', { sessionId });
     setQuestionStarted(true);
     setTimeLeft(30);
   };
 
   const nextQuestion = () => {
+    if (!isCreator) {
+      setError('Only the session creator can advance to the next question');
+      return;
+    }
+    
+    console.log("Emitting nextQuestion event");
     socket.emit('nextQuestion', { sessionId });
   };
 
   const endQuiz = () => {
+    if (!isCreator) {
+      setError('Only the session creator can end the quiz');
+      return;
+    }
+    
+    console.log("Emitting endQuiz event");
     socket.emit('endQuiz', { sessionId });
   };
 
-  useEffect(() => {
-    socket.on('questionStarted', () => {
-      setQuestionStarted(true);
-      setTimeLeft(30);
-    });
-
-    socket.on('playerLeft', () => {
-      // Re-fetch player list when someone leaves
-      socket.emit('joinSession', { sessionId });
-    });
-
-    return () => {
-      socket.off('questionStarted');
-      socket.off('playerLeft');
-    };
-  }, [sessionId]);
-
   // Guard clause if not authenticated
   if (!isAuthenticated || !user) return null;
+  
+  // Show loading state
+  if (fetchingQuizData) {
+    return (
+      <PageContainer>
+        <Title>Loading Quiz...</Title>
+        <WaitingStateCard>
+          <StatusMessage>Fetching quiz data...</StatusMessage>
+        </WaitingStateCard>
+      </PageContainer>
+    );
+  }
+  
+  // If the quiz hasn't started yet, show waiting screen
+  if (!quizStarted) {
+    return (
+      <PageContainer>
+        <Title>Quiz Ready!</Title>
+        <WaitingStateCard>
+          <StatusMessage>Waiting for quiz to start...</StatusMessage>
+          <div>
+            {isCreator && (
+              <Button onClick={() => {
+                setQuizStarted(true);
+                // For the creator, we need to emit startQuiz to update the status
+                socket.emit('startQuiz', { sessionId });
+              }}>
+                Start Quiz Now
+              </Button>
+            )}
+          </div>
+        </WaitingStateCard>
+      </PageContainer>
+    );
+  }
 
   return (
     <PageContainer>
       <Title>Quiz Room: {sessionId}</Title>
+      
+      {error && (
+        <ErrorDisplay>{error}</ErrorDisplay>
+      )}
 
       <ProgressIndicator>
         {[...Array(totalQuestions)].map((_, index) => (
@@ -236,33 +413,66 @@ const QuizRoomPage = () => {
 
       <QuestionCard>
         <h2>Question {currentQuestion + 1}</h2>
-        {currentQuestionData && (
-          <p>{currentQuestionData.question}</p>
+        {currentQuestionData ? (
+          <div>
+            <p>{currentQuestionData.question}</p>
+            
+            {/* Only show options if question has started */}
+            {questionStarted && (
+              <div>
+                {currentQuestionData.options && currentQuestionData.options.map((option, idx) => (
+                  <div key={idx} style={{margin: '10px 0'}}>
+                    <label>
+                      <input 
+                        type="radio" 
+                        name="answer" 
+                        value={option} 
+                        checked={answer === option}
+                        onChange={() => setAnswer(option)}
+                      />
+                      {' '}{option}
+                    </label>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+        ) : (
+          <p>Waiting for question data...</p>
         )}
         
-        <Form 
-          onSubmit={handleAnswerSubmit} 
-          error={error}
-          style={{ maxWidth: "400px", margin: "0 auto" }}
-        >
-          <AnswerInput
-            placeholder="Type your answer here..."
-            value={answer}
-            onChange={(e) => setAnswer(e.target.value)}
-            disabled={!questionStarted}
-          />
-          
-          {questionStarted && (
+        {questionStarted ? (
+          <Form 
+            onSubmit={handleAnswerSubmit} 
+            error={error}
+            style={{ maxWidth: "400px", margin: "0 auto" }}
+          >
+            {!currentQuestionData?.options && (
+              <AnswerInput
+                placeholder="Type your answer here..."
+                value={answer}
+                onChange={(e) => setAnswer(e.target.value)}
+              />
+            )}
+            
             <Button 
               type="submit"
               disabled={!answer.trim()}
             >
               Submit Answer
             </Button>
-          )}
-        </Form>
+          </Form>
+        ) : (
+          <StatusMessage>
+            {isCreator 
+              ? "Press 'Start Question' below to begin" 
+              : "Waiting for host to start the question..."}
+          </StatusMessage>
+        )}
         
-        <TimerBar $progress={(timeLeft / 30) * 100} />
+        {questionStarted && timeLeft !== null && (
+          <TimerBar $progress={(timeLeft / 30) * 100} />
+        )}
       </QuestionCard>
 
       <ButtonGroup>
@@ -289,6 +499,13 @@ const QuizRoomPage = () => {
             End Quiz
           </Button>
         )}
+        
+        <Button 
+          onClick={() => navigate('/home')} 
+          $variant="secondary"
+        >
+          Exit Quiz
+        </Button>
       </ButtonGroup>
 
       <ScoreBoard>
@@ -308,6 +525,10 @@ const QuizRoomPage = () => {
               <strong>{data.score}</strong>
             </ScoreItem>
           ))}
+          
+          {Object.keys(scores).length === 0 && (
+            <p>No scores yet. They'll appear as players answer questions.</p>
+          )}
         </ScoreList>
       </ScoreBoard>
     </PageContainer>
