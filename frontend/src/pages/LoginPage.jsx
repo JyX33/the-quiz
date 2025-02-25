@@ -58,12 +58,21 @@ const LoginPage = ({ setUser }) => {
 
   // Check if user is already authenticated
   useEffect(() => {
+    // Create abort controller to cancel request if component unmounts
+    const abortController = new AbortController();
+    
     const checkAuth = async () => {
       try {
+        // Reset any previous redirect attempt tracking
+        sessionStorage.setItem('redirectAttempts', '0');
+        
         const isAuthenticated = await checkAuthentication();
         if (isAuthenticated) {
           // Get user data
-          const userRes = await api.get('/users/me');
+          const userRes = await api.get('/users/me', { 
+            signal: abortController.signal 
+          });
+          
           setUser(userRes.data);
           
           // Redirect to the intended destination or home
@@ -71,14 +80,27 @@ const LoginPage = ({ setUser }) => {
           navigate(from, { replace: true });
         }
       } catch (error) {
-        // Just continue to login page
-        console.error('Error checking authentication:', error);
+        // Only handle if not aborted
+        if (!abortController.signal.aborted) {
+          // If it's not a 401/403 error, show it to the user
+          if (error.response?.status !== 401 && error.response?.status !== 403) {
+            setError('Error checking authentication status. Please try again.');
+          }
+        }
       } finally {
-        setIsCheckingAuth(false);
+        // Only update state if not aborted
+        if (!abortController.signal.aborted) {
+          setIsCheckingAuth(false);
+        }
       }
     };
 
     checkAuth();
+    
+    // Cleanup function
+    return () => {
+      abortController.abort();
+    };
   }, [location, navigate, setUser]);
 
   const validateForm = () => {
@@ -107,6 +129,9 @@ const LoginPage = ({ setUser }) => {
     setIsLoading(true);
 
     try {
+      // Reset any auth loop detection
+      sessionStorage.setItem('redirectAttempts', '0');
+      
       // Use the API utility that includes withCredentials
       const res = await api.post('/users/login', { username, password });
       
@@ -116,9 +141,14 @@ const LoginPage = ({ setUser }) => {
         navigate('/home');
       } else {
         // Token is handled via cookies now
-        const userRes = await api.get('/users/me');
-        setUser(userRes.data);
-        navigate('/home');
+        try {
+          const userRes = await api.get('/users/me');
+          setUser(userRes.data);
+          navigate('/home');
+        } catch (userError) {
+          // If we can't get user data even after login
+          handleApiError(userError, setError, setIsLoading);
+        }
       }
     } catch (error) {
       handleApiError(error, setError, setIsLoading);
