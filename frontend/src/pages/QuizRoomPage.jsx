@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState, useCallback } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import styled, { keyframes } from 'styled-components';
 import Form from '../components/shared/Form';
@@ -120,24 +120,41 @@ const StatusMessage = styled.div`
   animation: ${pulse} 2s infinite ease-in-out;
 `;
 
+const OptionContainer = styled.div`
+  margin: 10px 0;
+  padding: 12px;
+  border-radius: ${({ theme }) => theme.borderRadius};
+  transition: background-color 0.2s;
+  cursor: pointer;
+  text-align: left;
+  
+  &:hover {
+    background-color: ${({ theme }) => theme.background.accent + '33'};
+  }
+`;
+
 const QuizRoomPage = () => {
   const { sessionId } = useParams();
   const navigate = useNavigate();
   const [currentQuestion, setCurrentQuestion] = useState(0);
   const [answer, setAnswer] = useState('');
-  const [scores, setScores] = useState({}); // {userId: {score, username}}
-  const [players, setPlayers] = useState({}); // {userId: username}
-  const [timeLeft, setTimeLeft] = useState(null); // null means question hasn't started
+  const [scores, setScores] = useState({});
+  const [players, setPlayers] = useState({});
+  const [timeLeft, setTimeLeft] = useState(null);
   const [questionStarted, setQuestionStarted] = useState(false);
-  const [totalQuestions, setTotalQuestions] = useState(5); // This should come from your backend
+  const [totalQuestions, setTotalQuestions] = useState(5);
   const [updatedScore, setUpdatedScore] = useState(null);
-  const [currentQuestionData, setCurrentQuestionData] = useState(null); // Store question data
+  const [currentQuestionData, setCurrentQuestionData] = useState(null);
   const [error, setError] = useState('');
   const [sessionInfo, setSessionInfo] = useState(null);
   const [isCreator, setIsCreator] = useState(false);
   const [quizStarted, setQuizStarted] = useState(false);
   const [fetchingQuizData, setFetchingQuizData] = useState(true);
   const [socketConnected, setSocketConnected] = useState(socket.connected);
+  
+  // Add refs to control joining logic
+  const hasJoinedRef = useRef(false);
+  const socketEventsSetupRef = useRef(false);
   
   const { user, isAuthenticated } = useAuth();
 
@@ -199,6 +216,13 @@ const QuizRoomPage = () => {
     const handleConnect = () => {
       console.log('Socket connected in quiz room');
       setSocketConnected(true);
+      
+      // Attempt to join when socket connects
+      if (!hasJoinedRef.current && sessionId) {
+        console.log("Socket connected, attempting to join session:", sessionId);
+        socket.emit('joinSession', { sessionId });
+        hasJoinedRef.current = true;
+      }
     };
     
     const handleDisconnect = () => {
@@ -209,31 +233,57 @@ const QuizRoomPage = () => {
     socket.on('connect', handleConnect);
     socket.on('disconnect', handleDisconnect);
     
+    // Initial check - join session if socket is already connected
+    if (socket.connected && !hasJoinedRef.current && sessionId) {
+      console.log("Socket already connected, joining session:", sessionId);
+      socket.emit('joinSession', { sessionId });
+      hasJoinedRef.current = true;
+    }
+    
     return () => {
+      console.log("Removing socket connection handlers");
       socket.off('connect', handleConnect);
       socket.off('disconnect', handleDisconnect);
     };
-  }, []);
+  }, [sessionId]); // Only re-run if sessionId changes
 
-  // Set up socket event listeners
+  // Set up socket event listeners - separated from the connection logic
   useEffect(() => {
-    socket.on('playerJoined', (players) => {
-      const playerMap = players.reduce((acc, p) => {
+    // Avoid setting up listeners multiple times
+    if (socketEventsSetupRef.current) {
+      console.log("Socket events already set up, skipping");
+      return;
+    }
+    
+    console.log("Setting up socket event listeners");
+    socketEventsSetupRef.current = true;
+    
+    // Player joined handler
+    const handlePlayerJoined = (updatedPlayers) => {
+      console.log("Player joined event received:", updatedPlayers);
+      const playerMap = updatedPlayers.reduce((acc, p) => {
         acc[p.id] = p.username;
         return acc;
       }, {});
       setPlayers(playerMap);
-    });
-
-    socket.on('scoreUpdate', (newScores) => {
+    };
+    
+    // Score update handler
+    const handleScoreUpdate = (newScores) => {
       console.log("Score update received:", newScores);
-      setScores(newScores);
-      setUpdatedScore(Object.keys(newScores).find(id => 
-        newScores[id].score !== scores[id]?.score));
-      setTimeout(() => setUpdatedScore(null), 500);
-    });
-
-    socket.on('nextQuestion', (index) => {
+      setScores(prev => {
+        const updated = Object.keys(newScores).find(id => 
+          newScores[id]?.score !== prev[id]?.score);
+        
+        setUpdatedScore(updated);
+        setTimeout(() => setUpdatedScore(null), 500);
+        
+        return newScores;
+      });
+    };
+    
+    // Next question handler
+    const handleNextQuestion = (index) => {
       console.log("Next question event received:", index);
       setCurrentQuestion(index);
       setTimeLeft(null);
@@ -251,53 +301,67 @@ const QuizRoomPage = () => {
           console.error("Error updating question data:", e);
         }
       }
-    });
-
-    socket.on('quizEnded', (finalScores) => {
+    };
+    
+    // Quiz ended handler
+    const handleQuizEnded = (finalScores) => {
       console.log("Quiz ended event received");
       setScores(finalScores);
-      // Show final scores in a more elegant way
-      // This could be enhanced with a modal or animation
-    });
-
-    socket.on('questionStarted', () => {
+    };
+    
+    // Question started handler
+    const handleQuestionStarted = () => {
       console.log("Question started event received");
       setQuestionStarted(true);
       setTimeLeft(30);
-    });
-
-    socket.on('quizStateRestored', ({ currentQuestion, totalQuestions, question }) => {
+    };
+    
+    // Quiz state restored handler
+    const handleQuizStateRestored = ({ currentQuestion, totalQuestions, question }) => {
       console.log("Quiz state restored:", { currentQuestion, totalQuestions, question });
       setCurrentQuestion(currentQuestion);
       setTotalQuestions(totalQuestions);
       setCurrentQuestionData(question);
       setQuizStarted(true);
+      
       // Set the state to indicate the question has started if it's in progress
       if (question) {
         setQuestionStarted(true);
       }
-    });
-
-    socket.on('error', (errorMessage) => {
+    };
+    
+    // Error handler
+    const handleError = (errorMessage) => {
       console.error("Socket error:", errorMessage);
       setError(errorMessage);
-    });
-
-    // Join the session room when component mounts
-    console.log("Joining session:", sessionId);
-    socket.emit('joinSession', { sessionId });
-
-    return () => {
-      socket.off('playerJoined');
-      socket.off('scoreUpdate');
-      socket.off('nextQuestion');
-      socket.off('quizEnded');
-      socket.off('quizStateRestored');
-      socket.off('questionStarted');
-      socket.off('error');
     };
-  }, [sessionId, scores, sessionInfo]);
+    
+    // Register all event handlers
+    socket.on('playerJoined', handlePlayerJoined);
+    socket.on('scoreUpdate', handleScoreUpdate);
+    socket.on('nextQuestion', handleNextQuestion);
+    socket.on('quizEnded', handleQuizEnded);
+    socket.on('questionStarted', handleQuestionStarted);
+    socket.on('quizStateRestored', handleQuizStateRestored);
+    socket.on('error', handleError);
+    
+    // Clean up function
+    return () => {
+      console.log("Cleaning up socket event listeners");
+      socket.off('playerJoined', handlePlayerJoined);
+      socket.off('scoreUpdate', handleScoreUpdate);
+      socket.off('nextQuestion', handleNextQuestion);
+      socket.off('quizEnded', handleQuizEnded);
+      socket.off('questionStarted', handleQuestionStarted);
+      socket.off('quizStateRestored', handleQuizStateRestored);
+      socket.off('error', handleError);
+      
+      // Reset setup flag when unmounting
+      socketEventsSetupRef.current = false;
+    };
+  }, [sessionInfo]); // Only depend on sessionInfo for question data access
 
+  // Timer effect
   useEffect(() => {
     if (timeLeft !== null && timeLeft > 0) {
       const timer = setInterval(() => {
@@ -309,7 +373,8 @@ const QuizRoomPage = () => {
     }
   }, [timeLeft]);
 
-  const submitAnswer = (auto = false) => {
+  // Submit answer function - use useCallback to prevent recreating this function on every render
+  const submitAnswer = useCallback((auto = false) => {
     if (!auto && !answer.trim()) {
       setError('Please enter an answer');
       return;
@@ -319,15 +384,17 @@ const QuizRoomPage = () => {
     
     // Send NO_RESPONSE if auto-submitting with no answer, otherwise send trimmed answer
     const submission = (!answer.trim() && auto) ? "NO_RESPONSE" : answer.trim();
+    console.log("Submitting answer:", submission);
     socket.emit('submitAnswer', { sessionId, answer: submission });
     setAnswer('');
-  };
+  }, [answer, sessionId]);
 
   const handleAnswerSubmit = () => {
     submitAnswer();
   };
 
-  const startQuestion = () => {
+  // Start question function - use useCallback
+  const startQuestion = useCallback(() => {
     if (!isCreator) {
       setError('Only the session creator can start questions');
       return;
@@ -335,11 +402,10 @@ const QuizRoomPage = () => {
     
     console.log("Emitting startQuestion event");
     socket.emit('startQuestion', { sessionId });
-    setQuestionStarted(true);
-    setTimeLeft(30);
-  };
+  }, [isCreator, sessionId]);
 
-  const nextQuestion = () => {
+  // Next question function - use useCallback
+  const nextQuestion = useCallback(() => {
     if (!isCreator) {
       setError('Only the session creator can advance to the next question');
       return;
@@ -347,9 +413,10 @@ const QuizRoomPage = () => {
     
     console.log("Emitting nextQuestion event");
     socket.emit('nextQuestion', { sessionId });
-  };
+  }, [isCreator, sessionId]);
 
-  const endQuiz = () => {
+  // End quiz function - use useCallback
+  const endQuiz = useCallback(() => {
     if (!isCreator) {
       setError('Only the session creator can end the quiz');
       return;
@@ -357,7 +424,7 @@ const QuizRoomPage = () => {
     
     console.log("Emitting endQuiz event");
     socket.emit('endQuiz', { sessionId });
-  };
+  }, [isCreator, sessionId]);
 
   // Guard clause if not authenticated
   if (!isAuthenticated || !user) return null;
@@ -418,21 +485,29 @@ const QuizRoomPage = () => {
             <p>{currentQuestionData.question}</p>
             
             {/* Only show options if question has started */}
-            {questionStarted && (
+            {questionStarted && currentQuestionData.options && (
               <div>
-                {currentQuestionData.options && currentQuestionData.options.map((option, idx) => (
-                  <div key={idx} style={{margin: '10px 0'}}>
-                    <label>
+                {currentQuestionData.options.map((option, idx) => (
+                  <OptionContainer 
+                    key={idx}
+                    onClick={() => setAnswer(option)}
+                    style={{
+                      backgroundColor: answer === option ? '#e3f2fd' : 'transparent',
+                      border: answer === option ? '1px solid #0070dd' : '1px solid transparent'
+                    }}
+                  >
+                    <label style={{ cursor: 'pointer', display: 'flex', alignItems: 'center' }}>
                       <input 
                         type="radio" 
                         name="answer" 
                         value={option} 
                         checked={answer === option}
                         onChange={() => setAnswer(option)}
+                        style={{ marginRight: '10px' }}
                       />
-                      {' '}{option}
+                      {option}
                     </label>
-                  </div>
+                  </OptionContainer>
                 ))}
               </div>
             )}
