@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState, useCallback } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
-import styled, { keyframes } from 'styled-components';
+import styled, { keyframes, css } from 'styled-components';
+import { FiClock } from 'react-icons/fi';
 import Form from '../components/shared/Form';
 import {
   Button,
@@ -67,14 +68,25 @@ const ScoreItem = styled.div`
   animation: ${({ $isUpdated }) => $isUpdated ? pulse : 'none'} 0.3s ease-in-out;
 `;
 
-const TimerBar = styled.div`
-  height: 4px;
-  background: ${({ theme }) => theme.background.accent};
-  position: absolute;
-  bottom: 0;
-  left: 0;
-  width: ${({ $progress }) => $progress}%;
-  transition: width 1s linear;
+const ClockContainer = styled.div`
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 1.2rem;
+  font-weight: bold;
+  margin: ${({ theme }) => theme.spacing.md} 0;
+  color: ${({ theme, $urgency }) => 
+    $urgency === 'high' ? theme.error :
+    $urgency === 'medium' ? theme.warning :
+    theme.text};
+  transition: color 0.5s ease;
+  
+  svg {
+    margin-right: 8px;
+    ${({ $urgency }) => $urgency === 'high' && css`
+      animation: ${pulse} 0.5s infinite;
+    `}
+  }
 `;
 
 const ProgressIndicator = styled.div`
@@ -151,6 +163,8 @@ const QuizRoomPage = () => {
   const [quizStarted, setQuizStarted] = useState(false);
   const [fetchingQuizData, setFetchingQuizData] = useState(true);
   const [socketConnected, setSocketConnected] = useState(socket.connected);
+  const [hasSubmittedAnswer, setHasSubmittedAnswer] = useState(false);
+  const [submittedAnswer, setSubmittedAnswer] = useState('');
   
   // Add refs to control joining logic
   const hasJoinedRef = useRef(false);
@@ -289,6 +303,8 @@ const QuizRoomPage = () => {
       setTimeLeft(null);
       setAnswer('');
       setQuestionStarted(false);
+      setHasSubmittedAnswer(false);
+      setSubmittedAnswer('');
       
       // Update current question data if we have the questions loaded
       if (sessionInfo && sessionInfo.questions) {
@@ -324,10 +340,8 @@ const QuizRoomPage = () => {
       setCurrentQuestionData(question);
       setQuizStarted(true);
       
-      // Set the state to indicate the question has started if it's in progress
-      if (question) {
-        setQuestionStarted(true);
-      }
+      // Don't automatically start the question
+      setQuestionStarted(false);
     };
     
     // Error handler
@@ -375,6 +389,11 @@ const QuizRoomPage = () => {
 
   // Submit answer function - use useCallback to prevent recreating this function on every render
   const submitAnswer = useCallback((auto = false) => {
+    // Prevent submission if already submitted
+    if (hasSubmittedAnswer) {
+      return;
+    }
+
     if (!auto && !answer.trim()) {
       setError('Please enter an answer');
       return;
@@ -386,8 +405,11 @@ const QuizRoomPage = () => {
     const submission = (!answer.trim() && auto) ? "NO_RESPONSE" : answer.trim();
     console.log("Submitting answer:", submission);
     socket.emit('submitAnswer', { sessionId, answer: submission });
-    setAnswer('');
-  }, [answer, sessionId]);
+    
+    // Store the submitted answer and mark as submitted
+    setSubmittedAnswer(submission);
+    setHasSubmittedAnswer(true);
+  }, [answer, sessionId, hasSubmittedAnswer]);
 
   const handleAnswerSubmit = () => {
     submitAnswer();
@@ -425,6 +447,13 @@ const QuizRoomPage = () => {
     console.log("Emitting endQuiz event");
     socket.emit('endQuiz', { sessionId });
   }, [isCreator, sessionId]);
+
+  // Helper to determine the urgency level based on time left
+  const getUrgencyLevel = () => {
+    if (!timeLeft || timeLeft > 15) return 'low';
+    if (timeLeft > 5) return 'medium';
+    return 'high';
+  };
 
   // Guard clause if not authenticated
   if (!isAuthenticated || !user) return null;
@@ -488,21 +517,26 @@ const QuizRoomPage = () => {
             {questionStarted && currentQuestionData.options && (
               <div>
                 {currentQuestionData.options.map((option, idx) => (
-                  <OptionContainer 
+                  <OptionContainer
                     key={idx}
-                    onClick={() => setAnswer(option)}
+                    onClick={() => !hasSubmittedAnswer && setAnswer(option)}
                     style={{
-                      backgroundColor: answer === option ? '#e3f2fd' : 'transparent',
-                      border: answer === option ? '1px solid #0070dd' : '1px solid transparent'
+                      backgroundColor: (hasSubmittedAnswer && submittedAnswer === option) ? '#e8f5e9' :
+                                     answer === option ? '#e3f2fd' : 'transparent',
+                      border: (hasSubmittedAnswer && submittedAnswer === option) ? '2px solid #4caf50' :
+                             answer === option ? '1px solid #0070dd' : '1px solid transparent',
+                      cursor: hasSubmittedAnswer ? 'default' : 'pointer',
+                      opacity: hasSubmittedAnswer && submittedAnswer !== option ? 0.6 : 1
                     }}
                   >
-                    <label style={{ cursor: 'pointer', display: 'flex', alignItems: 'center' }}>
-                      <input 
-                        type="radio" 
-                        name="answer" 
-                        value={option} 
-                        checked={answer === option}
-                        onChange={() => setAnswer(option)}
+                    <label style={{ cursor: hasSubmittedAnswer ? 'default' : 'pointer', display: 'flex', alignItems: 'center' }}>
+                      <input
+                        type="radio"
+                        name="answer"
+                        value={option}
+                        checked={hasSubmittedAnswer ? submittedAnswer === option : answer === option}
+                        onChange={() => !hasSubmittedAnswer && setAnswer(option)}
+                        disabled={hasSubmittedAnswer}
                         style={{ marginRight: '10px' }}
                       />
                       {option}
@@ -517,36 +551,57 @@ const QuizRoomPage = () => {
         )}
         
         {questionStarted ? (
-          <Form 
-            onSubmit={handleAnswerSubmit} 
-            error={error}
-            style={{ maxWidth: "400px", margin: "0 auto" }}
-          >
-            {!currentQuestionData?.options && (
-              <AnswerInput
-                placeholder="Type your answer here..."
-                value={answer}
-                onChange={(e) => setAnswer(e.target.value)}
-              />
-            )}
+          <>
+            {timeLeft !== null && (
+                <ClockContainer $urgency={getUrgencyLevel()}>
+                  <FiClock />
+                  {timeLeft} seconds remaining
+                </ClockContainer>
+              )}
             
-            <Button 
-              type="submit"
-              disabled={!answer.trim()}
+            <Form 
+              onSubmit={handleAnswerSubmit} 
+              error={error}
+              style={{ maxWidth: "400px", margin: "0 auto" }}
             >
-              Submit Answer
-            </Button>
-          </Form>
+              {!currentQuestionData?.options && (
+                <>
+                  {hasSubmittedAnswer ? (
+                    <div style={{
+                      padding: '10px',
+                      margin: '10px 0',
+                      backgroundColor: '#e8f5e9',
+                      border: '2px solid #4caf50',
+                      borderRadius: '4px',
+                      textAlign: 'center'
+                    }}>
+                      Submitted Answer: {submittedAnswer}
+                    </div>
+                  ) : (
+                    <AnswerInput
+                      placeholder="Type your answer here..."
+                      value={answer}
+                      onChange={(e) => setAnswer(e.target.value)}
+                      disabled={hasSubmittedAnswer}
+                    />
+                  )}
+                </>
+              )}
+              
+              <Button
+                type="submit"
+                disabled={hasSubmittedAnswer || !answer.trim()}
+              >
+                {hasSubmittedAnswer ? 'Answer Submitted' : 'Submit Answer'}
+              </Button>
+            </Form>
+          </>
         ) : (
           <StatusMessage>
             {isCreator 
               ? "Press 'Start Question' below to begin" 
               : "Waiting for host to start the question..."}
           </StatusMessage>
-        )}
-        
-        {questionStarted && timeLeft !== null && (
-          <TimerBar $progress={(timeLeft / 30) * 100} />
         )}
       </QuestionCard>
 
