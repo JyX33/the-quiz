@@ -1,8 +1,14 @@
 const baseTheme = {
   // Common properties
   borderRadius: '8px',
-  boxShadow: '0 4px 6px rgba(0, 0, 0, 0.1)',
   transition: 'all 0.3s ease',
+  
+  // Shadows
+  shadows: {
+    small: '0 2px 4px rgba(0, 0, 0, 0.1)',
+    medium: '0 4px 6px rgba(0, 0, 0, 0.1)',
+    large: '0 8px 16px rgba(0, 0, 0, 0.1)'
+  },
   
   // Spacing scale
   spacing: {
@@ -43,11 +49,26 @@ export const allianceTheme = {
     main: '#f8f9fa',
     paper: '#ffffff',
     accent: '#e3f2fd',
+    primary: '#ffffff',
+    secondary: '#f8f9fa',
+    error: '#ffebee',
+    info: '#e3f2fd',
+    success: '#e8f5e9',
+    default: '#f5f5f5'
   },
   text: {
     primary: '#2c3e50',
     secondary: '#546e7a',
     accent: '#0070dd',
+    highlight: '#0070dd',
+    info: '#0288d1',
+    success: '#388e3c',
+    default: '#757575'
+  },
+  border: {
+    light: '#e0e0e0',
+    medium: '#bdbdbd',
+    dark: '#9e9e9e'
   },
   success: '#4caf50',
   error: '#f44336',
@@ -73,11 +94,26 @@ export const hordeTheme = {
     main: '#1a1a1a',
     paper: '#242424',
     accent: '#2c1810',
+    primary: '#242424',
+    secondary: '#1a1a1a',
+    error: '#311b1b',
+    info: '#1a2a38',
+    success: '#1b2e1e',
+    default: '#121212'
   },
   text: {
     primary: '#ffffff',
     secondary: '#b0bec5',
     accent: '#d4af37',
+    highlight: '#d4af37',
+    info: '#64b5f6',
+    success: '#81c784',
+    default: '#9e9e9e'
+  },
+  border: {
+    light: '#424242',
+    medium: '#616161',
+    dark: '#757575'
   },
   success: '#43a047',
   error: '#d32f2f',

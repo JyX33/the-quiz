@@ -4,6 +4,7 @@ import { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import styled from 'styled-components';
 import LoadingSpinner from '../components/shared/LoadingSpinner';
+import UserQuizzesPanel from '../components/UserQuizzesPanel';
 import {
   Button,
   Input,
@@ -30,9 +31,21 @@ const MainContent = styled.div`
   display: flex;
   flex-direction: column;
   align-items: center;
-  justify-content: center;
+  padding-top: ${({ theme }) => theme.spacing.xl};
   min-height: 80vh;
   gap: ${({ theme }) => theme.spacing.lg};
+  width: 100%;
+  max-width: 1200px;
+  margin: 0 auto;
+`;
+
+const WelcomeSection = styled.div`
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: ${({ theme }) => theme.spacing.md};
+  margin-bottom: ${({ theme }) => theme.spacing.lg};
+  width: 100%;
 `;
 
 const ActionContainer = styled.div`
@@ -41,18 +54,26 @@ const ActionContainer = styled.div`
   align-items: center;
   gap: ${({ theme }) => theme.spacing.md};
   margin: ${({ theme }) => theme.spacing.md} 0;
+  width: 100%;
+  max-width: 600px;
 `;
 
 const InputGroup = styled.div`
   display: flex;
   align-items: center;
   gap: ${({ theme }) => theme.spacing.md};
+  width: 100%;
 `;
 
 const ErrorMessage = styled.div`
   color: ${({ theme }) => theme.error || '#ff0000'};
   font-size: 0.9rem;
   margin-top: ${({ theme }) => theme.spacing.xs};
+`;
+
+const ContentSection = styled.div`
+  width: 100%;
+  padding: ${({ theme }) => theme.spacing.md};
 `;
 
 const HomePage = ({ updateTheme }) => {
@@ -123,35 +144,41 @@ const HomePage = ({ updateTheme }) => {
           <LoadingSpinner />
         ) : (
           <>
-            <h1>Welcome, {user?.username || 'User'}!</h1>
-            
-            <Button 
-              onClick={handleCreateQuiz}
-              disabled={isJoining}
-            >
-              Create Quiz
-            </Button>
-            
-            <ActionContainer>
-              <InputGroup>
-                <Input 
-                  placeholder="Session ID" 
-                  value={sessionId} 
-                  onChange={(e) => {
-                    setError('');
-                    setSessionId(e.target.value);
-                  }}
-                  disabled={isJoining}
-                />
-                <Button 
-                  onClick={handleJoinSession}
-                  disabled={isJoining}
-                >
-                  {isJoining ? 'Joining...' : 'Join Session'}
-                </Button>
-              </InputGroup>
-              {error && <ErrorMessage>{error}</ErrorMessage>}
-            </ActionContainer>
+            <WelcomeSection>
+              <h1>Welcome, {user?.username || 'User'}!</h1>
+              
+              <Button 
+                onClick={handleCreateQuiz}
+                disabled={isJoining}
+              >
+                Create Quiz
+              </Button>
+              
+              <ActionContainer>
+                <InputGroup>
+                  <Input 
+                    placeholder="Session ID" 
+                    value={sessionId} 
+                    onChange={(e) => {
+                      setError('');
+                      setSessionId(e.target.value);
+                    }}
+                    disabled={isJoining}
+                  />
+                  <Button 
+                    onClick={handleJoinSession}
+                    disabled={isJoining}
+                  >
+                    {isJoining ? 'Joining...' : 'Join Session'}
+                  </Button>
+                </InputGroup>
+                {error && <ErrorMessage>{error}</ErrorMessage>}
+              </ActionContainer>
+            </WelcomeSection>
+
+            <ContentSection>
+              <UserQuizzesPanel />
+            </ContentSection>
           </>
         )}
       </MainContent>
