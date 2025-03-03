@@ -162,7 +162,7 @@ const QuizRoomPage = () => {
   const [isCreator, setIsCreator] = useState(false);
   const [quizStarted, setQuizStarted] = useState(false);
   const [fetchingQuizData, setFetchingQuizData] = useState(true);
-  const [socketConnected, setSocketConnected] = useState(socket.connected);
+  const [, setSocketConnected] = useState(socket.connected);
   const [hasSubmittedAnswer, setHasSubmittedAnswer] = useState(false);
   const [submittedAnswer, setSubmittedAnswer] = useState('');
   
@@ -171,6 +171,30 @@ const QuizRoomPage = () => {
   const socketEventsSetupRef = useRef(false);
   
   const { user, isAuthenticated } = useAuth();
+
+  // MOVED: Submit answer function - place before any useEffect that uses it
+  const submitAnswer = useCallback((auto = false) => {
+    // Prevent submission if already submitted
+    if (hasSubmittedAnswer) {
+      return;
+    }
+
+    if (!auto && !answer.trim()) {
+      setError('Please enter an answer');
+      return;
+    }
+    
+    setError(''); // Clear any previous errors
+    
+    // Send NO_RESPONSE if auto-submitting with no answer, otherwise send trimmed answer
+    const submission = (!answer.trim() && auto) ? "NO_RESPONSE" : answer.trim();
+    console.log("Submitting answer:", submission);
+    socket.emit('submitAnswer', { sessionId, answer: submission });
+    
+    // Store the submitted answer and mark as submitted
+    setSubmittedAnswer(submission);
+    setHasSubmittedAnswer(true);
+  }, [answer, sessionId, hasSubmittedAnswer, setError]);
 
   // Fetch session details to determine if user is creator
   useEffect(() => {
@@ -375,7 +399,7 @@ const QuizRoomPage = () => {
     };
   }, [sessionInfo]); // Only depend on sessionInfo for question data access
 
-  // Timer effect
+  // Timer effect - now submitAnswer is defined before it's used here
   useEffect(() => {
     if (timeLeft !== null && timeLeft > 0) {
       const timer = setInterval(() => {
@@ -385,31 +409,7 @@ const QuizRoomPage = () => {
     } else if (timeLeft === 0) {
       submitAnswer(true); // Auto-submit when time runs out
     }
-  }, [timeLeft]);
-
-  // Submit answer function - use useCallback to prevent recreating this function on every render
-  const submitAnswer = useCallback((auto = false) => {
-    // Prevent submission if already submitted
-    if (hasSubmittedAnswer) {
-      return;
-    }
-
-    if (!auto && !answer.trim()) {
-      setError('Please enter an answer');
-      return;
-    }
-    
-    setError(''); // Clear any previous errors
-    
-    // Send NO_RESPONSE if auto-submitting with no answer, otherwise send trimmed answer
-    const submission = (!answer.trim() && auto) ? "NO_RESPONSE" : answer.trim();
-    console.log("Submitting answer:", submission);
-    socket.emit('submitAnswer', { sessionId, answer: submission });
-    
-    // Store the submitted answer and mark as submitted
-    setSubmittedAnswer(submission);
-    setHasSubmittedAnswer(true);
-  }, [answer, sessionId, hasSubmittedAnswer]);
+  }, [submitAnswer, timeLeft]);
 
   const handleAnswerSubmit = () => {
     submitAnswer();
@@ -657,7 +657,7 @@ const QuizRoomPage = () => {
           ))}
           
           {Object.keys(scores).length === 0 && (
-            <p>No scores yet. They'll appear as players answer questions.</p>
+            <p>No scores yet. They&apos;ll appear as players answer questions.</p>
           )}
         </ScoreList>
       </ScoreBoard>
