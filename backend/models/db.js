@@ -133,6 +133,18 @@ const initDb = async () => {
         FOREIGN KEY (user_id) REFERENCES users(id)
       )
     `);
+
+    await db.runAsync(`
+      CREATE TABLE IF NOT EXISTS player_bonuses (
+        session_id TEXT,
+        user_id INTEGER,
+        bonuses_used INTEGER DEFAULT 0,
+        bonus_active BOOLEAN DEFAULT 0,
+        PRIMARY KEY (session_id, user_id),
+        FOREIGN KEY (session_id) REFERENCES quiz_sessions(id),
+        FOREIGN KEY (user_id) REFERENCES users(id)
+      )
+    `);
     
     logger.info('Database schema initialized successfully');
   } catch (err) {

@@ -3,6 +3,7 @@ import { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import styled from 'styled-components';
 import FormInput from '../components/shared/FormInput';
+import FormSelect from '../components/shared/FormSelect';
 import Form from '../components/shared/Form';
 import {
   Button,
@@ -99,10 +100,11 @@ const CreateQuizPage = () => {
       
       // Validate correct answer
       if (!q.correctAnswer.trim()) {
-        return { valid: false, error: `Question ${i+1}: Please specify the correct answer` };
+        return { valid: false, error: `Question ${i+1}: Please select the correct answer` };
       }
       
       // Check that correct answer matches one of the options
+      // This should always be true with the dropdown, but we'll keep it as a safeguard
       if (!q.options.includes(q.correctAnswer)) {
         return { valid: false, error: `Question ${i+1}: Correct answer must match one of the options` };
       }
@@ -270,12 +272,13 @@ const CreateQuizPage = () => {
               />
             ))}
             
-            <FormInput
+            <FormSelect
               id={`question-${index}-answer`}
               label="Correct Answer"
               value={q.correctAnswer}
               onChange={(value) => updateQuestion(index, 'correctAnswer', value)}
-              placeholder="Enter the correct answer (must match one of the options)"
+              options={q.options}
+              placeholder="Select the correct answer"
               required
             />
           </QuestionContainer>

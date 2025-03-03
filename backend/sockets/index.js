@@ -2,10 +2,12 @@ import { logUserAction, logger } from '../logger.js';
 import { authenticateSocket } from '../middleware/auth.js';
 import db, { runTransaction } from '../models/db.js';
 
-// In-memory session scores and question tracking
+// In-memory session scores, question tracking, and bonus tracking
 const sessionScores = {};
 const sessionResponses = {}; // Track responses per question
 const lastHeartbeat = {};
+const sessionBonuses = {}; // Track bonus usage per session
+const MAX_BONUSES = 3;
 
 // Function to persist session scores to database periodically
 const persistSessionScores = (sessionId, userId, score, correct) => {
@@ -159,9 +161,39 @@ const setupSockets = (io) => {
                           sessionScores[sessionId][socket.userId] = { score: 0, correct: 0 };
                         }
                       }
+
+                      // Initialize player bonuses
+                      db.run(
+                        'INSERT OR IGNORE INTO player_bonuses (session_id, user_id, bonuses_used, bonus_active) VALUES (?, ?, 0, 0)',
+                        [sessionId, socket.userId],
+                        (err) => {
+                          if (err) {
+                            logger.error('Error initializing player bonuses:', {
+                              error: err.message,
+                              sessionId,
+                              userId: socket.userId
+                            });
+                          }
+
+                          // Initialize in-memory bonus tracking
+                          if (!sessionBonuses[sessionId]) {
+                            sessionBonuses[sessionId] = {};
+                          }
+                          sessionBonuses[sessionId][socket.userId] = {
+                            bonusesUsed: 0,
+                            bonusActive: false
+                          };
+                        }
+                      );
                       
                       // Always emit the latest scores to all clients
                       io.to(sessionId).emit('scoreUpdate', sessionScores[sessionId] || {});
+
+                      // Send initial bonus info to the player
+                      socket.emit('bonusInfo', {
+                        bonusesRemaining: MAX_BONUSES,
+                        bonusActive: false
+                      });
                     }
                   );
                 }
@@ -473,15 +505,31 @@ const setupSockets = (io) => {
                 sessionScores[sessionId][socket.userId] = { score: 0, correct: 0 };
               }
     
+              // Check if bonus is active for this player
+              const playerBonus = sessionBonuses[sessionId]?.[socket.userId];
+              let bonusActive = false;
+              let pointsEarned = 0;
+
               // Award points for correct answer
               if (answer === correctAnswer) {
-                sessionScores[sessionId][socket.userId].score += 10;
+                // Base points
+                pointsEarned = 10;
+
+                // Check if bonus should be applied
+                if (playerBonus?.bonusActive) {
+                  pointsEarned *= 2; // Double points with bonus
+                  bonusActive = true;
+                }
+
+                sessionScores[sessionId][socket.userId].score += pointsEarned;
                 sessionScores[sessionId][socket.userId].correct += 1;
                 
                 logger.debug('Correct answer submitted:', {
                   userId: socket.userId,
                   question: currentQuestion,
-                  sessionId
+                  sessionId,
+                  pointsEarned,
+                  bonusActive
                 });
               } else {
                 logger.debug('Incorrect answer submitted:', {
@@ -489,8 +537,38 @@ const setupSockets = (io) => {
                   question: currentQuestion,
                   answer,
                   correctAnswer,
-                  sessionId
+                  sessionId,
+                  bonusActive
                 });
+              }
+
+              // If bonus was active, consume it and increment usage
+              if (bonusActive) {
+                db.run(
+                  'UPDATE player_bonuses SET bonus_active = 0, bonuses_used = bonuses_used + 1 WHERE session_id = ? AND user_id = ?',
+                  [sessionId, socket.userId],
+                  (err) => {
+                    if (err) {
+                      logger.error('Error updating bonus usage:', {
+                        error: err.message,
+                        sessionId,
+                        userId: socket.userId
+                      });
+                    } else {
+                      // Update in-memory bonus tracking
+                      if (sessionBonuses[sessionId]?.[socket.userId]) {
+                        sessionBonuses[sessionId][socket.userId].bonusActive = false;
+                        sessionBonuses[sessionId][socket.userId].bonusesUsed += 1;
+
+                        // Notify player of updated bonus status
+                        socket.emit('bonusInfo', {
+                          bonusesRemaining: MAX_BONUSES - sessionBonuses[sessionId][socket.userId].bonusesUsed,
+                          bonusActive: false
+                        });
+                      }
+                    }
+                  }
+                );
               }
               
               // Persist scores to database
@@ -740,6 +818,80 @@ const setupSockets = (io) => {
           userId: socket.userId 
         });
         socket.emit('error', 'Failed to process end quiz request');
+      }
+    });
+
+    socket.on('activateBonus', ({ sessionId }) => {
+      try {
+        // Check if player has bonuses available
+        db.get(
+          'SELECT bonuses_used, bonus_active FROM player_bonuses WHERE session_id = ? AND user_id = ?',
+          [sessionId, socket.userId],
+          (err, bonusData) => {
+            if (err || !bonusData) {
+              logger.error('Error fetching bonus data:', {
+                error: err ? err.message : 'No bonus data found',
+                sessionId,
+                userId: socket.userId
+              });
+              return socket.emit('error', 'Could not activate bonus');
+            }
+
+            if (bonusData.bonuses_used >= MAX_BONUSES) {
+              return socket.emit('error', 'No bonuses remaining');
+            }
+
+            if (bonusData.bonus_active) {
+              return socket.emit('error', 'Bonus already active');
+            }
+
+            // Update bonus status in database
+            db.run(
+              'UPDATE player_bonuses SET bonus_active = 1 WHERE session_id = ? AND user_id = ?',
+              [sessionId, socket.userId],
+              (err) => {
+                if (err) {
+                  logger.error('Error activating bonus:', {
+                    error: err.message,
+                    sessionId,
+                    userId: socket.userId
+                  });
+                  return socket.emit('error', 'Failed to activate bonus');
+                }
+
+                // Update in-memory bonus tracking
+                if (!sessionBonuses[sessionId]) {
+                  sessionBonuses[sessionId] = {};
+                }
+                if (!sessionBonuses[sessionId][socket.userId]) {
+                  sessionBonuses[sessionId][socket.userId] = {
+                    bonusesUsed: bonusData.bonuses_used,
+                    bonusActive: true
+                  };
+                } else {
+                  sessionBonuses[sessionId][socket.userId].bonusActive = true;
+                }
+
+                socket.emit('bonusInfo', {
+                  bonusesRemaining: MAX_BONUSES - bonusData.bonuses_used,
+                  bonusActive: true
+                });
+
+                logger.info('Bonus activated:', {
+                  sessionId,
+                  userId: socket.userId,
+                  bonusesUsed: bonusData.bonuses_used
+                });
+              }
+            );
+          }
+        );
+      } catch (error) {
+        logger.error('Error in activateBonus handler:', {
+          error: error.message,
+          userId: socket.userId
+        });
+        socket.emit('error', 'Failed to process bonus activation');
       }
     });
 

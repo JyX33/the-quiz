@@ -13,6 +13,7 @@ import {
 import { useAuth } from '../contexts/AuthContext';
 import socket from '../socket';
 import api from '../utils/axios';
+import SessionLeaderboard from '../components/SessionLeaderboard';
 
 const slideIn = keyframes`
   from {
@@ -105,6 +106,32 @@ const ProgressDot = styled.div`
   transition: background-color 0.3s ease;
 `;
 
+const BonusButton = styled(Button)`
+  background: ${({ theme, $active }) =>
+    $active ? theme.success + '44' : theme.warning + '44'};
+  border: 2px solid ${({ theme, $active }) =>
+    $active ? theme.success : theme.warning};
+  margin-bottom: ${({ theme }) => theme.spacing.md};
+  
+  &:disabled {
+    opacity: 0.5;
+    cursor: not-allowed;
+  }
+`;
+
+const BonusInfo = styled.div`
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: ${({ theme }) => theme.spacing.md};
+  margin-bottom: ${({ theme }) => theme.spacing.md};
+`;
+
+const BonusCount = styled.span`
+  font-weight: bold;
+  color: ${({ theme }) => theme.warning};
+`;
+
 const ButtonGroup = styled.div`
   display: flex;
   gap: ${({ theme }) => theme.spacing.md};
@@ -165,16 +192,22 @@ const QuizRoomPage = () => {
   const [, setSocketConnected] = useState(socket.connected);
   const [hasSubmittedAnswer, setHasSubmittedAnswer] = useState(false);
   const [submittedAnswer, setSubmittedAnswer] = useState('');
+  const [showLeaderboard, setShowLeaderboard] = useState(false);
+  const [bonusesRemaining, setBonusesRemaining] = useState(3);
+  const [isBonusActive, setIsBonusActive] = useState(false);
   
-  // Add refs to control joining logic
   const hasJoinedRef = useRef(false);
   const socketEventsSetupRef = useRef(false);
   
   const { user, isAuthenticated } = useAuth();
 
-  // MOVED: Submit answer function - place before any useEffect that uses it
+  const activateBonus = useCallback(() => {
+    if (bonusesRemaining > 0 && !isBonusActive && !hasSubmittedAnswer) {
+      socket.emit('activateBonus', { sessionId });
+    }
+  }, [bonusesRemaining, isBonusActive, hasSubmittedAnswer, sessionId]);
+
   const submitAnswer = useCallback((auto = false) => {
-    // Prevent submission if already submitted
     if (hasSubmittedAnswer) {
       return;
     }
@@ -184,19 +217,16 @@ const QuizRoomPage = () => {
       return;
     }
     
-    setError(''); // Clear any previous errors
+    setError('');
     
-    // Send NO_RESPONSE if auto-submitting with no answer, otherwise send trimmed answer
     const submission = (!answer.trim() && auto) ? "NO_RESPONSE" : answer.trim();
     console.log("Submitting answer:", submission);
     socket.emit('submitAnswer', { sessionId, answer: submission });
     
-    // Store the submitted answer and mark as submitted
     setSubmittedAnswer(submission);
     setHasSubmittedAnswer(true);
   }, [answer, sessionId, hasSubmittedAnswer, setError]);
 
-  // Fetch session details to determine if user is creator
   useEffect(() => {
     if (!sessionId || !user) return;
     
@@ -209,7 +239,6 @@ const QuizRoomPage = () => {
         console.log('Session data loaded:', sessionData);
         setSessionInfo(sessionData);
         
-        // Check if current user is the creator
         const userIsCreator = sessionData.creator_id === user.id;
         console.log('Creator check:', {
           userId: user.id,
@@ -219,7 +248,6 @@ const QuizRoomPage = () => {
         
         setIsCreator(userIsCreator);
         
-        // Parse quiz questions if available
         if (sessionData.questions) {
           try {
             const parsedQuestions = JSON.parse(sessionData.questions);
@@ -233,7 +261,6 @@ const QuizRoomPage = () => {
           }
         }
         
-        // Check if quiz is already in progress
         if (sessionData.status === 'in_progress') {
           setQuizStarted(true);
         }
@@ -249,13 +276,11 @@ const QuizRoomPage = () => {
     fetchSessionDetails();
   }, [sessionId, user]);
 
-  // Socket connection status
   useEffect(() => {
     const handleConnect = () => {
       console.log('Socket connected in quiz room');
       setSocketConnected(true);
       
-      // Attempt to join when socket connects
       if (!hasJoinedRef.current && sessionId) {
         console.log("Socket connected, attempting to join session:", sessionId);
         socket.emit('joinSession', { sessionId });
@@ -271,7 +296,6 @@ const QuizRoomPage = () => {
     socket.on('connect', handleConnect);
     socket.on('disconnect', handleDisconnect);
     
-    // Initial check - join session if socket is already connected
     if (socket.connected && !hasJoinedRef.current && sessionId) {
       console.log("Socket already connected, joining session:", sessionId);
       socket.emit('joinSession', { sessionId });
@@ -283,11 +307,9 @@ const QuizRoomPage = () => {
       socket.off('connect', handleConnect);
       socket.off('disconnect', handleDisconnect);
     };
-  }, [sessionId]); // Only re-run if sessionId changes
+  }, [sessionId]);
 
-  // Set up socket event listeners - separated from the connection logic
   useEffect(() => {
-    // Avoid setting up listeners multiple times
     if (socketEventsSetupRef.current) {
       console.log("Socket events already set up, skipping");
       return;
@@ -296,7 +318,6 @@ const QuizRoomPage = () => {
     console.log("Setting up socket event listeners");
     socketEventsSetupRef.current = true;
     
-    // Player joined handler
     const handlePlayerJoined = (updatedPlayers) => {
       console.log("Player joined event received:", updatedPlayers);
       const playerMap = updatedPlayers.reduce((acc, p) => {
@@ -306,7 +327,6 @@ const QuizRoomPage = () => {
       setPlayers(playerMap);
     };
     
-    // Score update handler
     const handleScoreUpdate = (newScores) => {
       console.log("Score update received:", newScores);
       setScores(prev => {
@@ -320,7 +340,6 @@ const QuizRoomPage = () => {
       });
     };
     
-    // Next question handler
     const handleNextQuestion = (index) => {
       console.log("Next question event received:", index);
       setCurrentQuestion(index);
@@ -329,8 +348,8 @@ const QuizRoomPage = () => {
       setQuestionStarted(false);
       setHasSubmittedAnswer(false);
       setSubmittedAnswer('');
+      setIsBonusActive(false); // Reset bonus state for new question
       
-      // Update current question data if we have the questions loaded
       if (sessionInfo && sessionInfo.questions) {
         try {
           const questions = JSON.parse(sessionInfo.questions);
@@ -343,47 +362,47 @@ const QuizRoomPage = () => {
       }
     };
     
-    // Quiz ended handler
     const handleQuizEnded = (finalScores) => {
       console.log("Quiz ended event received");
       setScores(finalScores);
+      setShowLeaderboard(true);
     };
     
-    // Question started handler
     const handleQuestionStarted = () => {
       console.log("Question started event received");
       setQuestionStarted(true);
       setTimeLeft(30);
     };
     
-    // Quiz state restored handler
     const handleQuizStateRestored = ({ currentQuestion, totalQuestions, question }) => {
       console.log("Quiz state restored:", { currentQuestion, totalQuestions, question });
       setCurrentQuestion(currentQuestion);
       setTotalQuestions(totalQuestions);
       setCurrentQuestionData(question);
       setQuizStarted(true);
-      
-      // Don't automatically start the question
       setQuestionStarted(false);
     };
     
-    // Error handler
     const handleError = (errorMessage) => {
       console.error("Socket error:", errorMessage);
       setError(errorMessage);
     };
     
-    // Register all event handlers
     socket.on('playerJoined', handlePlayerJoined);
     socket.on('scoreUpdate', handleScoreUpdate);
     socket.on('nextQuestion', handleNextQuestion);
     socket.on('quizEnded', handleQuizEnded);
+    const handleBonusInfo = (bonusData) => {
+      console.log("Bonus info received:", bonusData);
+      setBonusesRemaining(bonusData.bonusesRemaining);
+      setIsBonusActive(bonusData.bonusActive);
+    };
+
     socket.on('questionStarted', handleQuestionStarted);
     socket.on('quizStateRestored', handleQuizStateRestored);
     socket.on('error', handleError);
+    socket.on('bonusInfo', handleBonusInfo);
     
-    // Clean up function
     return () => {
       console.log("Cleaning up socket event listeners");
       socket.off('playerJoined', handlePlayerJoined);
@@ -393,13 +412,12 @@ const QuizRoomPage = () => {
       socket.off('questionStarted', handleQuestionStarted);
       socket.off('quizStateRestored', handleQuizStateRestored);
       socket.off('error', handleError);
+      socket.off('bonusInfo', handleBonusInfo);
       
-      // Reset setup flag when unmounting
       socketEventsSetupRef.current = false;
     };
-  }, [sessionInfo]); // Only depend on sessionInfo for question data access
+  }, [sessionInfo]);
 
-  // Timer effect - now submitAnswer is defined before it's used here
   useEffect(() => {
     if (timeLeft !== null && timeLeft > 0) {
       const timer = setInterval(() => {
@@ -407,7 +425,7 @@ const QuizRoomPage = () => {
       }, 1000);
       return () => clearInterval(timer);
     } else if (timeLeft === 0) {
-      submitAnswer(true); // Auto-submit when time runs out
+      submitAnswer(true);
     }
   }, [submitAnswer, timeLeft]);
 
@@ -415,7 +433,6 @@ const QuizRoomPage = () => {
     submitAnswer();
   };
 
-  // Start question function - use useCallback
   const startQuestion = useCallback(() => {
     if (!isCreator) {
       setError('Only the session creator can start questions');
@@ -426,7 +443,6 @@ const QuizRoomPage = () => {
     socket.emit('startQuestion', { sessionId });
   }, [isCreator, sessionId]);
 
-  // Next question function - use useCallback
   const nextQuestion = useCallback(() => {
     if (!isCreator) {
       setError('Only the session creator can advance to the next question');
@@ -437,7 +453,6 @@ const QuizRoomPage = () => {
     socket.emit('nextQuestion', { sessionId });
   }, [isCreator, sessionId]);
 
-  // End quiz function - use useCallback
   const endQuiz = useCallback(() => {
     if (!isCreator) {
       setError('Only the session creator can end the quiz');
@@ -448,17 +463,22 @@ const QuizRoomPage = () => {
     socket.emit('endQuiz', { sessionId });
   }, [isCreator, sessionId]);
 
-  // Helper to determine the urgency level based on time left
+  const handlePlayAgain = useCallback(() => {
+    setShowLeaderboard(false);
+    setQuizStarted(false);
+    setCurrentQuestion(0);
+    setScores({});
+    socket.emit('restartQuiz', { sessionId });
+  }, [sessionId]);
+
   const getUrgencyLevel = () => {
     if (!timeLeft || timeLeft > 15) return 'low';
     if (timeLeft > 5) return 'medium';
     return 'high';
   };
 
-  // Guard clause if not authenticated
   if (!isAuthenticated || !user) return null;
   
-  // Show loading state
   if (fetchingQuizData) {
     return (
       <PageContainer>
@@ -469,8 +489,20 @@ const QuizRoomPage = () => {
       </PageContainer>
     );
   }
+
+  if (showLeaderboard) {
+    return (
+      <SessionLeaderboard
+        scores={scores}
+        players={players}
+        currentUser={user}
+        onClose={() => navigate('/home')}
+        onPlayAgain={handlePlayAgain}
+        questionCount={totalQuestions}
+      />
+    );
+  }
   
-  // If the quiz hasn't started yet, show waiting screen
   if (!quizStarted) {
     return (
       <PageContainer>
@@ -481,7 +513,6 @@ const QuizRoomPage = () => {
             {isCreator && (
               <Button onClick={() => {
                 setQuizStarted(true);
-                // For the creator, we need to emit startQuiz to update the status
                 socket.emit('startQuiz', { sessionId });
               }}>
                 Start Quiz Now
@@ -513,7 +544,6 @@ const QuizRoomPage = () => {
           <div>
             <p>{currentQuestionData.question}</p>
             
-            {/* Only show options if question has started */}
             {questionStarted && currentQuestionData.options && (
               <div>
                 {currentQuestionData.options.map((option, idx) => (
@@ -558,8 +588,21 @@ const QuizRoomPage = () => {
                   {timeLeft} seconds remaining
                 </ClockContainer>
               )}
+
+            <BonusInfo>
+              <BonusCount>
+                {bonusesRemaining} bonus{bonusesRemaining !== 1 ? 'es' : ''} remaining
+              </BonusCount>
+              <BonusButton
+                onClick={activateBonus}
+                disabled={bonusesRemaining === 0 || isBonusActive || hasSubmittedAnswer}
+                $active={isBonusActive}
+              >
+                {isBonusActive ? '2x Points Active!' : 'Activate 2x Points'}
+              </BonusButton>
+            </BonusInfo>
             
-            <Form 
+            <Form
               onSubmit={handleAnswerSubmit} 
               error={error}
               style={{ maxWidth: "400px", margin: "0 auto" }}
