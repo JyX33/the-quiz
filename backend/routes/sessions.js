@@ -76,6 +76,68 @@ router.post('/', authenticateToken, asyncHandler(async (req, res, next) => {
   }
 }));
 
+// Get leaderboard
+router.get('/leaderboard/global', asyncHandler(async (req, res, next) => {
+  logger.debug('Fetching global leaderboard');
+
+  const leaderboard = await db.allAsync(
+    `SELECT u.username, SUM(s.score) as total_score 
+     FROM scores s 
+     JOIN users u ON s.user_id = u.id 
+     GROUP BY u.id, u.username 
+     ORDER BY total_score DESC 
+     LIMIT 10`,
+    []
+  );
+  
+  logger.info('Global leaderboard retrieved successfully:', { 
+    playerCount: leaderboard.length 
+  });
+  
+  res.json(leaderboard);
+}));
+
+// Get all sessions
+router.get('/all', authenticateToken, asyncHandler(async (req, res, next) => {
+  logger.debug('Fetching all sessions:', { userId: req.user.id });
+
+  const sessions = await db.allAsync(
+    `SELECT qs.*, q.category, q.difficulty, u.username as creator_name
+     FROM quiz_sessions qs
+     JOIN quizzes q ON qs.quiz_id = q.id
+     JOIN users u ON qs.creator_id = u.id
+     ORDER BY qs.id DESC`,
+    []
+  );
+  
+  logger.info('All sessions retrieved successfully:', {
+    userId: req.user.id,
+    sessionCount: sessions.length
+  });
+  
+  res.json(sessions);
+}));
+
+// Get user's sessions
+router.get('/', authenticateToken, asyncHandler(async (req, res, next) => {
+  logger.debug('Fetching user sessions:', { userId: req.user.id });
+
+  const sessions = await db.allAsync(
+    `SELECT qs.*, q.category, q.difficulty
+     FROM quiz_sessions qs
+     JOIN quizzes q ON qs.quiz_id = q.id
+     WHERE qs.creator_id = ?`,
+    [req.user.id]
+  );
+  
+  logger.info('User sessions retrieved successfully:', {
+    userId: req.user.id,
+    sessionCount: sessions.length
+  });
+  
+  res.json(sessions);
+}));
+
 // Get session details
 router.get('/:id', authenticateToken, asyncHandler(async (req, res, next) => {
   const sessionId = req.params.id;
@@ -207,47 +269,6 @@ router.get('/:id/players', authenticateToken, asyncHandler(async (req, res, next
   });
   
   res.json(players);
-}));
-
-// Get leaderboard
-router.get('/leaderboard/global', asyncHandler(async (req, res, next) => {
-  logger.debug('Fetching global leaderboard');
-
-  const leaderboard = await db.allAsync(
-    `SELECT u.username, SUM(s.score) as total_score 
-     FROM scores s 
-     JOIN users u ON s.user_id = u.id 
-     GROUP BY u.id, u.username 
-     ORDER BY total_score DESC 
-     LIMIT 10`,
-    []
-  );
-  
-  logger.info('Global leaderboard retrieved successfully:', { 
-    playerCount: leaderboard.length 
-  });
-  
-  res.json(leaderboard);
-}));
-
-// Get user's sessions
-router.get('/', authenticateToken, asyncHandler(async (req, res, next) => {
-  logger.debug('Fetching user sessions:', { userId: req.user.id });
-
-  const sessions = await db.allAsync(
-    `SELECT qs.*, q.category, q.difficulty 
-     FROM quiz_sessions qs 
-     JOIN quizzes q ON qs.quiz_id = q.id 
-     WHERE qs.creator_id = ?`,
-    [req.user.id]
-  );
-  
-  logger.info('User sessions retrieved successfully:', { 
-    userId: req.user.id,
-    sessionCount: sessions.length 
-  });
-  
-  res.json(sessions);
 }));
 
 export default router;

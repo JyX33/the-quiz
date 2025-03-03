@@ -28,10 +28,10 @@ const UserQuizzesPanel = () => {
         setIsLoading(true);
         setError('');
         
-        // Fetch quizzes and sessions in parallel
+        // Fetch all quizzes and all sessions in parallel
         const [quizzesResponse, sessionsResponse] = await Promise.all([
-          api.get('/quizzes'),
-          api.get('/sessions')
+          api.get('/quizzes/all'), // Endpoint to get all quizzes, not just user's
+          api.get('/sessions/all') // Endpoint to get all sessions, not just user's
         ]);
         
         setQuizzes(quizzesResponse.data.data || quizzesResponse.data);
@@ -45,6 +45,24 @@ const UserQuizzesPanel = () => {
 
     fetchUserData();
   }, []);
+
+  // Update creator names for quizzes where the current user is the creator
+  useEffect(() => {
+    if (!user || quizzes.length === 0) return;
+    
+    // Mark quizzes created by the current user with "You" as creator name
+    setQuizzes(prevQuizzes =>
+      prevQuizzes.map(quiz => {
+        if (quiz.creator_id === user.id) {
+          return {
+            ...quiz,
+            creator_name: quiz.creator_name ? `${quiz.creator_name} (You)` : 'You'
+          };
+        }
+        return quiz;
+      })
+    );
+  }, [quizzes.length, user]);
 
   // Map sessions to quizzes
   const quizzesWithSessions = quizzes.map(quiz => ({
@@ -106,21 +124,22 @@ const UserQuizzesPanel = () => {
   return (
     <PanelContainer>
       <PanelHeader>
-        <h2>My Quizzes</h2>
+        <h2>All Quizzes</h2>
       </PanelHeader>
       
       {error && <ErrorMessage>{error}</ErrorMessage>}
       
       {quizzesWithSessions.length === 0 ? (
         <EmptyState>
-          <p>You haven&apos;t created any quizzes yet.</p>
+          <p>No quizzes available.</p>
         </EmptyState>
       ) : (
         quizzesWithSessions.map(quiz => (
-          <QuizItem 
-            key={quiz.id} 
-            quiz={quiz} 
-            onCreateSession={() => handleCreateSession(quiz.id)} 
+          <QuizItem
+            key={quiz.id}
+            quiz={quiz}
+            currentUser={user}
+            onCreateSession={() => handleCreateSession(quiz.id)}
             onDeleteQuiz={() => handleDeleteQuiz(quiz.id)}
           />
         ))

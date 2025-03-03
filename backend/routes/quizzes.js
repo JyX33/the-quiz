@@ -71,7 +71,7 @@ router.get('/', authenticateToken, asyncHandler(async (req, res, next) => {
   // Calculate offset
   const offset = (page - 1) * limit;
   
-  logger.debug('Fetching user quizzes with pagination:', { 
+  logger.debug('Fetching user quizzes with pagination:', {
     userId: req.user.id,
     page,
     limit,
@@ -90,12 +90,12 @@ router.get('/', authenticateToken, asyncHandler(async (req, res, next) => {
     
     // Get quizzes with pagination
     const quizzes = await db.allAsync(
-      'SELECT id, category, difficulty FROM quizzes WHERE creator_id = ? LIMIT ? OFFSET ?',
+      'SELECT id, category, difficulty, creator_id FROM quizzes WHERE creator_id = ? LIMIT ? OFFSET ?',
       [req.user.id, limit, offset]
     );
     
-    logger.info('User quizzes retrieved with pagination:', { 
-      userId: req.user.id, 
+    logger.info('User quizzes retrieved with pagination:', {
+      userId: req.user.id,
       quizCount: quizzes.length,
       page,
       totalPages,
@@ -120,6 +120,76 @@ router.get('/', authenticateToken, asyncHandler(async (req, res, next) => {
       userId: req.user.id
     });
     throw new AppError('Failed to fetch quizzes', 500, 'DATABASE_ERROR');
+  }
+}));
+
+// Get all quizzes with pagination
+router.get('/all', authenticateToken, asyncHandler(async (req, res, next) => {
+  // Parse pagination parameters
+  const page = parseInt(req.query.page) || 1;
+  const limit = parseInt(req.query.limit) || 10;
+  
+  // Validate pagination parameters
+  if (page < 1 || limit < 1 || limit > 100) {
+    throw new AppError('Invalid pagination parameters', 400, 'VALIDATION_ERROR');
+  }
+  
+  // Calculate offset
+  const offset = (page - 1) * limit;
+  
+  logger.debug('Fetching all quizzes with pagination:', {
+    userId: req.user.id,
+    page,
+    limit,
+    offset
+  });
+
+  try {
+    // Get total count for pagination info
+    const countResult = await db.getAsync(
+      'SELECT COUNT(*) as total FROM quizzes'
+    );
+    
+    const total = countResult ? countResult.total : 0;
+    const totalPages = Math.ceil(total / limit);
+    
+    // Get all quizzes with pagination, including creator information
+    const quizzes = await db.allAsync(
+      `SELECT q.id, q.category, q.difficulty, q.creator_id,
+       u.username as creator_name
+       FROM quizzes q
+       LEFT JOIN users u ON q.creator_id = u.id
+       ORDER BY q.id DESC
+       LIMIT ? OFFSET ?`,
+      [limit, offset]
+    );
+    
+    logger.info('All quizzes retrieved with pagination:', {
+      userId: req.user.id,
+      quizCount: quizzes.length,
+      page,
+      totalPages,
+      total
+    });
+    
+    // Return paginated response
+    res.json({
+      data: quizzes,
+      pagination: {
+        total,
+        totalPages,
+        currentPage: page,
+        limit,
+        hasNextPage: page < totalPages,
+        hasPrevPage: page > 1
+      }
+    });
+  } catch (error) {
+    logger.error('Failed to fetch all quizzes:', {
+      error: error.message,
+      userId: req.user.id
+    });
+    throw new AppError('Failed to fetch all quizzes', 500, 'DATABASE_ERROR');
   }
 }));
 

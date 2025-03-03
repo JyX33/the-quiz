@@ -12,7 +12,9 @@ import {
 } from './styles';
 import { Button } from '../shared/StyledComponents';
 
-const QuizItem = ({ quiz, onCreateSession, onDeleteQuiz }) => {
+const QuizItem = ({ quiz, currentUser, onCreateSession, onDeleteQuiz }) => {
+  // Check if the current user is the creator of the quiz
+  const isCreator = currentUser && quiz.creator_id === currentUser.id;
   const [isExpanded, setIsExpanded] = useState(false);
   
   const toggleExpand = () => {
@@ -32,6 +34,7 @@ const QuizItem = ({ quiz, onCreateSession, onDeleteQuiz }) => {
           <h3>{quiz.category} Quiz</h3>
           <div>
             <Badge color="primary">Difficulty: {quiz.difficulty}</Badge>
+            <Badge color="secondary">Creator: {quiz.creator_name || 'Unknown'}</Badge>
             {Object.entries(statusCounts).map(([status, count]) => (
               <Badge key={status} color={status === 'waiting' ? 'info' : status === 'active' ? 'success' : 'secondary'}>
                 {status}: {count}
@@ -41,12 +44,21 @@ const QuizItem = ({ quiz, onCreateSession, onDeleteQuiz }) => {
         </QuizDetails>
         
         <ActionButtons>
-          <Button onClick={onCreateSession} $variant="primary" size="sm">
-            Create Session
-          </Button>
-          <Button onClick={onDeleteQuiz} $variant="danger" size="sm">
-            Delete Quiz
-          </Button>
+          {isCreator ? (
+            <>
+              <Button onClick={onCreateSession} $variant="primary" size="sm">
+                Create Session
+              </Button>
+              <Button onClick={onDeleteQuiz} $variant="danger" size="sm">
+                Delete Quiz
+              </Button>
+            </>
+          ) : (
+            // For non-creators, show a button to view sessions
+            <Button onClick={toggleExpand} $variant="secondary" size="sm">
+              {isExpanded ? 'Hide Sessions' : 'View Sessions'}
+            </Button>
+          )}
           <ToggleButton onClick={toggleExpand}>
             {isExpanded ? '▲' : '▼'}
           </ToggleButton>
@@ -73,8 +85,13 @@ QuizItem.propTypes = {
     id: PropTypes.string.isRequired,
     category: PropTypes.string.isRequired,
     difficulty: PropTypes.string.isRequired,
+    creator_id: PropTypes.string.isRequired,
+    creator_name: PropTypes.string,
     sessions: PropTypes.array.isRequired
   }).isRequired,
+  currentUser: PropTypes.shape({
+    id: PropTypes.string.isRequired
+  }),
   onCreateSession: PropTypes.func.isRequired,
   onDeleteQuiz: PropTypes.func.isRequired
 };
