@@ -1,0 +1,15 @@
+services:
+  - type: web
+    name: quiz-app-backend
+    env: node
+    buildCommand: cd backend && npm install
+    startCommand: cd backend && npm run prod
+    envVars:
+      - key: NODE_ENV
+        value: production
+      - key: JWT_SECRET
+        generateValue: true
+    disk:
+      name: database
+      mountPath: /app/data
+      sizeGB: 1

@@ -1,9 +1,13 @@
 import axios from 'axios';
 
 // Create axios instance
+const apiBaseUrl = import.meta.env.PROD 
+  ? 'https://the-quiz-nv25.onrender.com/api' // This will be your backend URL
+  : 'http://localhost:5000/api';
+
 const api = axios.create({
-  baseURL: 'http://localhost:5000/api',
-  withCredentials: true, // Important for cookies
+  baseURL: apiBaseUrl,
+  withCredentials: true,
 });
 
 // Initialize CSRF token and timestamp

@@ -20,9 +20,12 @@ const getStoredToken = () => {
   }
 };
 
-// Initialize socket with auto-connect disabled to setup auth first
-const socket = io('http://localhost:5000', {
-  autoConnect: false, // Keep disabled until we set auth
+const socketUrl = import.meta.env.PROD 
+  ? 'https://the-quiz-nv25.onrender.com' // This will be your backend URL
+  : 'http://localhost:5000';
+
+const socket = io(socketUrl, {
+  autoConnect: false,
   withCredentials: true, // Important for cookies
   reconnectionAttempts: 5, // Limit reconnection attempts
   reconnectionDelay: 1000, // Start with 1s delay
