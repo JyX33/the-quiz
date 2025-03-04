@@ -26,7 +26,7 @@ const fetchCsrfToken = async () => {
   try {
     console.log('Fetching new CSRF token');
     // Use relative URL
-    const response = await axios.get('/api/csrf-token', {
+    const response = await axios.get('http://sg0k0k4g0sw0k8goos804ok8.82.29.170.182.sslip.io/api/csrf-token', {
       withCredentials: true
     });
     
