@@ -34,7 +34,7 @@ const fetchCsrfToken = async () => {
     if (response?.data?.csrfToken) {
       csrfToken = response.data.csrfToken;
       csrfTokenTimestamp = Date.now();
-      console.log('Valid CSRF token received');
+      console.log('Valid CSRF token received : ', csrfToken);
       return csrfToken;
     } else {
       console.warn('Invalid CSRF token response:', response?.data);
