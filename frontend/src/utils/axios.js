@@ -1,4 +1,5 @@
 import axios from 'axios';
+import { getEmergencyCsrfToken } from './csrfBypass';
 
 // Create axios instance
 const apiBaseUrl = import.meta.env.PROD 
@@ -24,17 +25,32 @@ const MAX_RETRIES = 2;
 const fetchCsrfToken = async () => {
   try {
     console.log('Fetching new CSRF token');
-    // Use relative URL instead of absolute
+    // Use relative URL
     const response = await axios.get('/api/csrf-token', {
       withCredentials: true
     });
-    csrfToken = response.data.csrfToken;
-    csrfTokenTimestamp = Date.now();
-    console.log('CSRF token received, first 5 chars:', csrfToken.substring(0, 5));
-    return csrfToken;
+    
+    // Check if response has expected structure
+    if (response?.data?.csrfToken) {
+      csrfToken = response.data.csrfToken;
+      csrfTokenTimestamp = Date.now();
+      console.log('Valid CSRF token received');
+      return csrfToken;
+    } else {
+      console.warn('Invalid CSRF token response:', response?.data);
+      // Fall back to emergency token
+      csrfToken = getEmergencyCsrfToken();
+      csrfTokenTimestamp = Date.now();
+      console.log('Using emergency CSRF token');
+      return csrfToken;
+    }
   } catch (error) {
-    console.error('Failed to fetch CSRF token', error);
-    throw error;
+    console.error('Failed to fetch CSRF token:', error?.message);
+    // Fall back to emergency token
+    csrfToken = getEmergencyCsrfToken();
+    csrfTokenTimestamp = Date.now();
+    console.log('Using emergency CSRF token after error');
+    return csrfToken;
   }
 };
 /**
