@@ -3,7 +3,7 @@ import { getEmergencyCsrfToken } from './csrfBypass';
 
 // Create axios instance
 const apiBaseUrl = import.meta.env.PROD 
-  ? 'http://sg0k0k4g0sw0k8goos804ok8.82.29.170.182.sslip.io/api' // This will be your backend URL
+  ? 'https://sg0k0k4g0sw0k8goos804ok8.82.29.170.182.sslip.io/api' // This will be your backend URL
   : 'http://localhost:5000/api';
 
 // const apiBaseUrl = '/api';
@@ -26,7 +26,7 @@ const fetchCsrfToken = async () => {
   try {
     console.log('Fetching new CSRF token');
     // Use relative URL
-    const response = await axios.get('http://sg0k0k4g0sw0k8goos804ok8.82.29.170.182.sslip.io/api/csrf-token', {
+    const response = await axios.get('https://sg0k0k4g0sw0k8goos804ok8.82.29.170.182.sslip.io/api/csrf-token', {
       withCredentials: true
     });
     

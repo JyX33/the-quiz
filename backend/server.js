@@ -114,7 +114,7 @@ io.use((socket, next) => {
 // Middleware
 const corsOptions = {
   origin: process.env.NODE_ENV === 'production' 
-    ? ['http://is80s4w8kkccgko8808ookww.82.29.170.182.sslip.io'] // Your public frontend domain
+    ? ['https://is80s4w8kkccgko8808ookww.82.29.170.182.sslip.io'] // Your public frontend domain
     : 'http://localhost:5173',
   credentials: true,// Important for cookies
   methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
