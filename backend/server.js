@@ -131,6 +131,12 @@ app.use('/api/sessions', csrfProtection);
 
 // Add route to get CSRF token
 app.get('/api/csrf-token', csrfProtection, (req, res) => {
+  // Set explicit headers for CORS
+  res.header('Access-Control-Allow-Origin', req.headers.origin);
+  res.header('Access-Control-Allow-Credentials', 'true');
+  
+  // Log what's happening
+  console.log('CSRF token generated:', req.csrfToken().slice(0, 5) + '...');
   res.json({ csrfToken: req.csrfToken() });
 });
 
