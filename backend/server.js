@@ -117,9 +117,9 @@ app.use(cookieParser()); // Add cookie-parser middleware before csrf
 const csrfProtection = csrf({
   cookie: {
     httpOnly: true,
-    secure: process.env.NODE_ENV === 'production',
-    sameSite: process.env.NODE_ENV === 'production' ? 'none' : 'lax',
-    domain: process.env.NODE_ENV === 'production' ? '.82.29.170.182.sslip.io' : undefined
+    secure: true,
+    sameSite: 'none', // Important for cross-domain requests
+    // Don't set a specific domain - let browser handle it
   }
 });
 

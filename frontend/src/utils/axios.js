@@ -23,19 +23,20 @@ const MAX_RETRIES = 2;
  */
 const fetchCsrfToken = async () => {
   try {
-    // Use direct axios call instead of the api instance to avoid circular dependency
-    const response = await axios.get('http://sg0k0k4g0sw0k8goos804ok8.82.29.170.182.sslip.io/api/csrf-token', {
+    console.log('Fetching new CSRF token');
+    // Use relative URL instead of absolute
+    const response = await axios.get('/api/csrf-token', {
       withCredentials: true
     });
     csrfToken = response.data.csrfToken;
     csrfTokenTimestamp = Date.now();
+    console.log('CSRF token received, first 5 chars:', csrfToken.substring(0, 5));
     return csrfToken;
   } catch (error) {
     console.error('Failed to fetch CSRF token', error);
-    throw error; // Re-throw to let caller handle
+    throw error;
   }
 };
-
 /**
  * Check if the CSRF token has expired or is close to expiry
  */
