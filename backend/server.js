@@ -47,18 +47,19 @@ logger.info(`Using JWT_SECRET from environment: ${process.env.JWT_SECRET ? 'Yes'
 
 // Setup Socket.io with enhanced error handling and configuration
 const io = new Server(server, {
-  cors: {
-    origin: config.corsOrigin,
-    methods: config.socketMethods,
-    credentials: true, // Allow cookies to be sent with requests
-  },
+  // cors: {
+  //   origin: config.corsOrigin,
+  //   methods: config.socketMethods,
+  //   credentials: true, // Allow cookies to be sent with requests
+  // },
   allowEIO3: true, // Allow Engine.IO v3 client to connect
   cookie: {
     name: "io",
     path: "/",
     httpOnly: true,
+    secure: process.env.NODE_ENV === 'production',
     sameSite: process.env.NODE_ENV === 'production' ? 'none' : 'lax',
-    secure: process.env.NODE_ENV === 'production'
+    domain: process.env.NODE_ENV === 'production' ? '.82.29.170.182.sslip.io' : undefined
   },
   // Add pingTimeout and pingInterval configuration
   pingTimeout: 60000,
