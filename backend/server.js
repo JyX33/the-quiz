@@ -47,11 +47,11 @@ logger.info(`Using JWT_SECRET from environment: ${process.env.JWT_SECRET ? 'Yes'
 
 // Setup Socket.io with enhanced error handling and configuration
 const io = new Server(server, {
-  // cors: {
-  //   origin: config.corsOrigin,
-  //   methods: config.socketMethods,
-  //   credentials: true, // Allow cookies to be sent with requests
-  // },
+  cors: {
+    origin: config.corsOrigin,
+    methods: config.socketMethods,
+    credentials: true, // Allow cookies to be sent with requests
+  },
   allowEIO3: true, // Allow Engine.IO v3 client to connect
   cookie: {
     name: "io",
