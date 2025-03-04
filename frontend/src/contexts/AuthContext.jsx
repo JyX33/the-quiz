@@ -23,8 +23,10 @@ export const AuthProvider = ({ children }) => {
   const extractTokenFromCookies = () => {
     try {
       const cookies = document.cookie.split(';');
+      console.log('Cookies found:', cookies); // Debug cookies
       const socketTokenCookie = cookies.find(c => c.trim().startsWith('socket_token='));
       if (socketTokenCookie) {
+        console.log('Socket token cookie found:', socketTokenCookie);
         return socketTokenCookie.split('=')[1];
       }
       return null;
