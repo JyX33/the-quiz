@@ -105,7 +105,10 @@ const corsOptions = {
 // Apply CORS to all routes
 app.use(cors({
   origin: true,  // Allow all origins (temporary)
-  credentials: true
+  credentials: true,
+  methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
+  allowedHeaders: ['Content-Type', 'Authorization', 'X-CSRF-Token'],
+  exposedHeaders: ['X-CSRF-Token']
 }));
 
 app.use(cookieParser()); // Add cookie-parser middleware before csrf
