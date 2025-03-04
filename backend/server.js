@@ -102,7 +102,10 @@ const corsOptions = {
 };
 
 // Apply CORS to all routes
-app.use(cors(corsOptions));
+app.use(cors({
+  origin: true,  // Allow all origins (temporary)
+  credentials: true
+}));
 
 app.use(cookieParser()); // Add cookie-parser middleware before csrf
 
