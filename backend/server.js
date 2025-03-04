@@ -15,7 +15,7 @@ import http from 'http';
 import morgan from 'morgan';
 import { Server } from 'socket.io';
 import config from './config/config.js';
-import { logger, stream, initializeLogger } from './logger.js';
+import { initializeLogger, logger, stream } from './logger.js';
 import db, { initDb } from './models/db.js';
 
 // Initialize logger with db instance
@@ -93,7 +93,7 @@ io.use((socket, next) => {
 // Middleware
 const corsOptions = {
   origin: process.env.NODE_ENV === 'production' 
-    ? ['http://is80s4w8kkccgko8808ookww.82.29.170.182.sslip.io'] // Your public frontend domain
+    ? ['http://is80s4w8kkccgko8808ookww.82.29.170.182.sslip.io', 'http://srv743489.hstgr.cloud',] // Your public frontend domain
     : 'http://localhost:5173',
   credentials: true,// Important for cookies
   methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
@@ -111,7 +111,8 @@ const csrfProtection = csrf({
   cookie: {
     httpOnly: true,
     secure: process.env.NODE_ENV === 'production',
-    sameSite: process.env.NODE_ENV === 'production' ? 'none' : 'lax'
+    sameSite: process.env.NODE_ENV === 'production' ? 'none' : 'lax',
+    domain: process.env.NODE_ENV === 'production' ? '.82.29.170.182.sslip.io' : undefined
   }
 });
 
