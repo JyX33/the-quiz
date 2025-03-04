@@ -2,7 +2,7 @@ import axios from 'axios';
 
 // Create axios instance
 const apiBaseUrl = import.meta.env.PROD 
-  ? 'http://backend-service:5000/api' // This will be your backend URL
+  ? 'http://sg0k0k4g0sw0k8goos804ok8.82.29.170.182.sslip.io/api' // This will be your backend URL
   : 'http://localhost:5000/api';
 
 const api = axios.create({
@@ -22,7 +22,7 @@ const MAX_RETRIES = 2;
 const fetchCsrfToken = async () => {
   try {
     // Use direct axios call instead of the api instance to avoid circular dependency
-    const response = await axios.get('http://backend-service:5000/api/csrf-token', {
+    const response = await axios.get('http://sg0k0k4g0sw0k8goos804ok8.82.29.170.182.sslip.io/api/csrf-token', {
       withCredentials: true
     });
     csrfToken = response.data.csrfToken;

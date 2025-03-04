@@ -21,7 +21,7 @@ const getStoredToken = () => {
 };
 
 const socketUrl = import.meta.env.PROD 
-  ? 'http://backend-service:5000' // This will be your backend URL
+  ? 'http://sg0k0k4g0sw0k8goos804ok8.82.29.170.182.sslip.io' // This will be your backend URL
   : 'http://localhost:5000';
 
 const socket = io(socketUrl, {

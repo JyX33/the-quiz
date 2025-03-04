@@ -4,7 +4,7 @@ const config = {
   jwtSecret: process.env.JWT_SECRET || 'your_jwt_secret_default',
   corsOrigin: process.env.CORS_ORIGIN || (
     process.env.NODE_ENV === 'production' 
-      ? 'https://srv743489.hstgr.cloud' // Update this with your frontend URL
+      ? 'http://is80s4w8kkccgko8808ookww.82.29.170.182.sslip.io' // Update this with your frontend URL
       : 'http://localhost:5173'
   ),
   socketMethods: ['GET', 'POST'],
