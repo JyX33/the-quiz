@@ -2,7 +2,7 @@ import axios from 'axios';
 
 // Create axios instance
 const apiBaseUrl = import.meta.env.PROD 
-  ? 'http://localhost:5000/api' // This will be your backend URL
+  ? 'http://backend-service:5000/api' // This will be your backend URL
   : 'http://localhost:5000/api';
 
 const api = axios.create({
@@ -22,7 +22,7 @@ const MAX_RETRIES = 2;
 const fetchCsrfToken = async () => {
   try {
     // Use direct axios call instead of the api instance to avoid circular dependency
-    const response = await axios.get('http://localhost:5000/api/csrf-token', {
+    const response = await axios.get('http://backend-service:5000/api/csrf-token', {
       withCredentials: true
     });
     csrfToken = response.data.csrfToken;
