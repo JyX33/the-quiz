@@ -5,18 +5,10 @@ import { refreshToken } from './utils/auth';
 // Get token from localStorage
 const getStoredToken = () => {
   try {
-    // Try to get token from localStorage instead of sessionStorage
-    const token = localStorage.getItem('socket_token');
-    if (token) {
-      const tokenPreview = token.substring(0, 10) + '...';
-      console.log(`Found stored socket token: ${tokenPreview}`);
-    } else {
-      console.log('No socket token found in storage');
-    }
-    return token;
+    return localStorage.getItem('socket_token');
   } catch (error) {
-    console.error('Error accessing localStorage:', error);
-    return null;
+    console.warn('localStorage access failed, falling back to cookie method', error);
+    return null; // Will fall back to cookie extraction
   }
 };
 

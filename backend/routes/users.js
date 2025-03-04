@@ -96,16 +96,18 @@ router.post('/login', asyncHandler(async (req, res, next) => {
   res.cookie('token', token, {
     httpOnly: true,
     secure: process.env.NODE_ENV === 'production',
-    sameSite: 'strict',
-    maxAge: 3600000 // 1 hour in milliseconds
+    sameSite: 'none', // Critical for cross-subdomain requests
+    domain: '.82.29.170.182.sslip.io', // Common parent domain
+    maxAge: 3600000
   });
   
   // Also set a non-HttpOnly cookie for socket auth
   res.cookie('socket_token', token, {
-    httpOnly: false, // Allow JavaScript access
+    httpOnly: true,
     secure: process.env.NODE_ENV === 'production',
-    sameSite: 'strict',
-    maxAge: 3600000 // 1 hour in milliseconds
+    sameSite: 'none', // Critical for cross-subdomain requests
+    domain: '.82.29.170.182.sslip.io', // Common parent domain
+    maxAge: 3600000
   });
   
   try {

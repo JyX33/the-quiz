@@ -114,7 +114,7 @@ io.use((socket, next) => {
 // Middleware
 const corsOptions = {
   origin: process.env.NODE_ENV === 'production' 
-    ? ['http://is80s4w8kkccgko8808ookww.82.29.170.182.sslip.io', 'http://srv743489.hstgr.cloud',] // Your public frontend domain
+    ? ['http://is80s4w8kkccgko8808ookww.82.29.170.182.sslip.io'] // Your public frontend domain
     : 'http://localhost:5173',
   credentials: true,// Important for cookies
   methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
@@ -123,13 +123,7 @@ const corsOptions = {
 };
 
 // Apply CORS to all routes
-app.use(cors({
-  origin: true,  // Allow all origins (temporary)
-  credentials: true,
-  methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
-  allowedHeaders: ['Content-Type', 'Authorization', 'X-CSRF-Token'],
-  exposedHeaders: ['X-CSRF-Token']
-}));
+app.use(cors(corsOptions));
 
 app.use(cookieParser()); // Add cookie-parser middleware before csrf
 
@@ -137,9 +131,9 @@ app.use(cookieParser()); // Add cookie-parser middleware before csrf
 const csrfProtection = csrf({
   cookie: {
     httpOnly: true,
-    secure: true,
-    sameSite: 'none', // Important for cross-domain requests
-    // Don't set a specific domain - let browser handle it
+    secure: process.env.NODE_ENV === 'production',
+    sameSite: 'none', // Change from 'strict'
+    domain: '.82.29.170.182.sslip.io' // Add parent domain
   }
 });
 
