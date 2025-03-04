@@ -1,11 +1,11 @@
 import axios from 'axios';
 
 // Create axios instance
-// const apiBaseUrl = import.meta.env.PROD 
-//   ? 'http://sg0k0k4g0sw0k8goos804ok8.82.29.170.182.sslip.io/api' // This will be your backend URL
-//   : 'http://localhost:5000/api';
+const apiBaseUrl = import.meta.env.PROD 
+  ? 'http://sg0k0k4g0sw0k8goos804ok8.82.29.170.182.sslip.io/api' // This will be your backend URL
+  : 'http://localhost:5000/api';
 
-const apiBaseUrl = '/api';
+// const apiBaseUrl = '/api';
 
 const api = axios.create({
   baseURL: apiBaseUrl,
