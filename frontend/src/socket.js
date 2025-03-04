@@ -21,7 +21,7 @@ const getStoredToken = () => {
 };
 
 const socketUrl = import.meta.env.PROD 
-  ? 'https://the-quiz-nv25.onrender.com' // This will be your backend URL
+  ? 'http://localhost:5000' // This will be your backend URL
   : 'http://localhost:5000';
 
 const socket = io(socketUrl, {

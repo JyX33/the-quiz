@@ -4,7 +4,7 @@ const config = {
   jwtSecret: process.env.JWT_SECRET || 'your_jwt_secret_default',
   corsOrigin: process.env.CORS_ORIGIN || (
     process.env.NODE_ENV === 'production' 
-      ? 'https://the-quiz.vercel.app' // Update this with your frontend URL
+      ? 'http://srv743489.hstgr.cloud' // Update this with your frontend URL
       : 'http://localhost:5173'
   ),
   socketMethods: ['GET', 'POST'],
