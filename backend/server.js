@@ -71,16 +71,18 @@ const io = new Server(server, {
     origin: config.corsOrigin,
     methods: config.socketMethods,
     credentials: true, // Allow cookies to be sent with requests
+    allowedHeaders: ["Cookie", "X-CSRF-Token", "Authorization"]
   },
-  allowEIO3: true, // Allow Engine.IO v3 client to connect
+  // Keep other settings the same
+  allowEIO3: true,
   cookie: {
     name: "io",
     path: "/",
     httpOnly: true,
-    secure: process.env.NODE_ENV === 'production',
-    sameSite: process.env.NODE_ENV === 'production' ? 'none' : 'lax',
-    domain: process.env.NODE_ENV === 'production' ? '.82.29.170.182.sslip.io' : undefined
-  },
+    secure: true, // Ensure this is true for HTTPS
+    sameSite: 'none', // For cross-site requests
+    domain: '.82.29.170.182.sslip.io' // Common parent domain
+  },  
   // Add pingTimeout and pingInterval configuration
   pingTimeout: 60000,
   pingInterval: 25000
